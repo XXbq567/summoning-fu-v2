@@ -1,6 +1,8 @@
 'use strict';
 const { Session } = require('../renderer/ritual-timeline.js');
+const { validateUiObservation } = require('../adapter/ui-send-observation.cjs');
 const windowsPath = require('node:path').win32;
+const { burnOutsetDIP } = require('../renderer/send-geometry.js');
 class HostClock {
   constructor({ staleMs = 90000 } = {}) { this.session = new Session(); this.staleMs = staleMs; this.lastEvidence = null; }
   accept(events, now) {
@@ -35,6 +37,17 @@ function entranceBounds(saved, area) {
   const width = Math.round(320 * scale), height = Math.round(676 * scale);
   return clampBounds({ width, height, x: saved?.x ?? area.x + area.width - width - 24, y: saved?.y ?? area.y + area.height - height - 24 }, area);
 }
+function independentPetLayout(saved, area) {
+  if (!area || !['x', 'y', 'width', 'height'].every(key => Number.isFinite(area[key])) || !Number.isFinite(burnOutsetDIP) || burnOutsetDIP < 0 || area.width <= burnOutsetDIP * 2 || area.height <= burnOutsetDIP * 2) return null;
+  const paper = entranceBounds(saved, area), inset = burnOutsetDIP;
+  const scale = Math.min(1, (area.width - inset * 2) / paper.width, (area.height - inset * 2) / paper.height);
+  const width = paper.width * scale, height = paper.height * scale;
+  if (width * 264 / 360 < 6 || height * 710 / 760 < 6) return null;
+  const bounds = clampBounds({ x: paper.x - inset, y: paper.y - inset, width: Math.ceil(width + inset * 2), height: Math.ceil(height + inset * 2) }, area);
+  const targetRect = Object.freeze({ x: inset, y: inset, width, height });
+  const originRect = Object.freeze({ x: inset + width / 2 - 4, y: inset + height * .88, width: 8, height: 8 });
+  return Object.freeze({ bounds: Object.freeze(bounds), geometry: Object.freeze({ originRect, targetRect }) });
+}
 class EntranceScheduler {
   constructor() { this.generation = 0; this.pending = null; this.seen = new Set(); this.sourceWatermark = -Infinity; this.sourceEvent = null; }
   acceptSource(eventId, startedAtMs) {
@@ -44,7 +57,7 @@ class EntranceScheduler {
   queue(event, now) {
     if (!event || typeof event.eventId !== 'string' || this.seen.has(event.eventId) || !Number.isFinite(now)) return null;
     this.seen.add(event.eventId); if (this.seen.size > 512) this.seen.delete(this.seen.values().next().value);
-    const token = ++this.generation; this.pending = { token, event, dueAt: now + 5000 }; return token;
+    const token = ++this.generation; this.pending = { token, event, dueAt: now }; return token;
   }
   isCurrent(token) { return token === this.generation; }
   take(token, now) {
@@ -57,20 +70,63 @@ function startupIntent(args, hasBinding) {
   const quit = args.includes('--quit'), hidden = quit || args.includes('--hide');
   return { quit, hidden, read: !quit && (args.includes('--read') || (!hasBinding && !hidden)) };
 }
+function previewQaProfile(args) {
+  const flags = Array.isArray(args) ? args : [];
+  const count = flags.filter(arg => arg === '--preview-qa-only' || arg === '--paperlab-preview-only').length;
+  const interactive = flags.includes('--paperlab-preview-only');
+  if (!count) return { valid: true, enabled: false, userData: null };
+  const invalid = { valid: false, enabled: true, userData: null };
+  if (count !== 1 || flags.some(arg => typeof arg === 'string' && /^(--session-file|--session-id|--entrance-file)(=|$)|^--read$/.test(arg))) return invalid;
+  const roots = flags.flatMap((arg, index) => arg === '--user-data-dir' ? [flags[index + 1]] : typeof arg === 'string' && arg.startsWith('--user-data-dir=') ? [arg.slice(16)] : []);
+  if (roots.length !== 1 || typeof roots[0] !== 'string') return invalid;
+  const directory = roots[0];
+  if (directory.length > 4096 || !/^[A-Za-z]:[\\/]/.test(directory) || /[\x00-\x1f]/.test(directory) || directory.slice(2).includes(':') || /[\\/]$/.test(directory) || directory.split(/[\\/]/).some(part => part === '.' || part === '..')) return invalid;
+  const leaf = interactive ? /^summoning-fu-preview-local-[a-f0-9]{8,32}$/ : /^summoning-fu-preview-qa-[a-f0-9]{8,32}$/;
+  if (!leaf.test(windowsPath.basename(directory))) return invalid;
+  return { valid: true, enabled: true, userData: windowsPath.normalize(directory), ...(interactive ? { interactive: true } : {}) };
+}
+function samePreviewQaProfile(currentArgs, nextArgs) {
+  const current = previewQaProfile(currentArgs), next = previewQaProfile(nextArgs);
+  return current.valid && next.valid && current.enabled && next.enabled && current.userData.toLowerCase() === next.userData.toLowerCase();
+}
 async function verifyEntranceUntil({ verify, deadline, now, wait = ms => new Promise(resolve => setTimeout(resolve, ms)), isActive = () => true, waitForContext = false }) {
   const transient = new Set(['source-not-ready', 'source-changed', 'latest-turn-mismatch']);
+  let contextDeadline = null;
   // No source watermark, queue or visible state changes before positive verification.
-  for (let attempt = 0; attempt < 21; attempt++) {
+  for (let attempt = 0; attempt < 25; attempt++) {
     if (!isActive()) return { verified: false, reason: 'cancelled' };
     const result = await verify();
     if (!isActive()) return { verified: false, reason: 'cancelled' };
     const contextPending = waitForContext && result.verified && result.contextMissing === true;
-    if ((!contextPending && (result.verified || !transient.has(result.reason))) || now() >= deadline || attempt === 20) return result;
-    await wait(Math.min(250, Math.max(1, deadline - now())));
+    if (contextPending && contextDeadline === null) contextDeadline = now() + 750;
+    const activeDeadline = contextPending ? contextDeadline : deadline;
+    if ((!contextPending && (result.verified || !transient.has(result.reason))) || now() >= activeDeadline || attempt === 24) return result;
+    await wait(Math.min(250, Math.max(1, activeDeadline - now())));
   }
 }
 function entranceMotionPolicy(systemPreference) {
   return { systemReducedMotion: typeof systemPreference === 'boolean' ? systemPreference : null, effectiveReducedMotion: false };
+}
+function sanitizePaperlabEvidence(value) {
+  if (!value || value.engine !== 'paperlab' || value.libraryVersion !== '0.8.1' || !['materialReady', 'canvasVisible'].every(key => typeof value[key] === 'boolean')) return null;
+  if (Object.hasOwn(value, 'effectiveReducedMotion') && value.effectiveReducedMotion !== false) return null;
+  if (!['point', 'travel', 'unfold', 'writing', 'hold', 'burning', 'ash', 'hidden'].includes(value.phase)) return null;
+  if (!['actualDrawCount', 'damageVersion', 'textureRasterizations'].every(key => Number.isSafeInteger(value[key]) && value[key] >= 0 && value[key] <= 1000000000)) return null;
+  if (!['writing', 'burn'].every(key => Number.isFinite(value[key]) && value[key] >= 0 && value[key] <= 1)) return null;
+  if (value.presenceRemaining !== null && (!Number.isFinite(value.presenceRemaining) || value.presenceRemaining < 0 || value.presenceRemaining > 1)) return null;
+  if (!['metadataHash', 'textureHash'].every(key => typeof value[key] === 'string' && /^[a-f0-9]{8}$/.test(value[key]))) return null;
+  if (value.error !== null && !['engine-unavailable', 'texture-failed', 'webgl-unavailable', 'context-lost', 'render-failed', 'disposed'].includes(value.error)) return null;
+  const result = { ...Object.fromEntries(['engine', 'libraryVersion', 'materialReady', 'canvasVisible', 'actualDrawCount', 'phase', 'writing', 'burn', 'presenceRemaining', 'damageVersion', 'metadataHash', 'textureHash', 'textureRasterizations', 'error'].map(key => [key, value[key]])), effectiveReducedMotion: false };
+  if (['flameCount', 'maxFlameHeightDIP', 'colorPipeline'].some(key => Object.hasOwn(value, key))) {
+    if (!Number.isSafeInteger(value.flameCount) || value.flameCount < 0 || value.flameCount > 16 || !Number.isFinite(value.maxFlameHeightDIP) || value.maxFlameHeightDIP < 0 || value.maxFlameHeightDIP > 50 || value.colorPipeline !== 'srgb-no-tone-mapping') return null;
+    Object.assign(result, { flameCount: value.flameCount, maxFlameHeightDIP: value.maxFlameHeightDIP, colorPipeline: value.colorPipeline });
+  }
+  return result;
+}
+function withPaperlabEvidence(value, result) {
+  if (!Object.hasOwn(value, 'paperlab')) return result;
+  const checked = sanitizePaperlabEvidence(value.paperlab);
+  return checked ? { ...result, paperlab: checked } : null;
 }
 function sanitizeRenderEvidence(value) {
   if (!value || typeof value !== 'object' || typeof value.reducedMotion !== 'boolean' || typeof value.documentHidden !== 'boolean') return null;
@@ -79,13 +135,14 @@ function sanitizeRenderEvidence(value) {
   if (value.runId !== null && (typeof value.runId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/.test(value.runId))) return null;
   const f = value.frame;
   if (!f || !Number.isFinite(f.activeMs) || f.activeMs < 0 || f.activeMs > Number.MAX_SAFE_INTEGER || ![f.burn, f.writing].every(v => Number.isFinite(v) && v >= 0 && v <= 1)) return null;
-  if (!['paper', 'writing', 'seal', 'burning', 'renewal', 'hold', 'leaving', 'hidden'].includes(f.phase) || !['idle', 'working', 'waiting', 'completed', 'error', 'cancelled', 'unknown'].includes(f.state)) return null;
+  if (!['point', 'travel', 'unfold', 'paper', 'writing', 'seal', 'burning', 'ash', 'renewal', 'hold', 'leaving', 'hidden'].includes(f.phase) || !['idle', 'working', 'waiting', 'completed', 'error', 'cancelled', 'unknown'].includes(f.state)) return null;
   if (![f.paperOpacity, f.opacity].every(v => Number.isFinite(v) && v >= 0 && v <= 1)) return null;
   if (![f.visibleGlyphs, f.totalGlyphs].every(v => Number.isSafeInteger(v) && v >= 0 && v <= 100000) || f.visibleGlyphs > f.totalGlyphs) return null;
   if (![f.holdStartMs, f.leaveAtMs, f.hideAtMs].every(v => Number.isFinite(v) && v >= 0 && v <= 60000)) return null;
-  return { runId: value.runId, reducedMotion: value.reducedMotion, systemReducedMotion: value.systemReducedMotion, effectiveReducedMotion: value.effectiveReducedMotion, documentHidden: value.documentHidden, rafCount: value.rafCount, renderCount: value.renderCount, frame: { activeMs: f.activeMs, phase: f.phase, burn: f.burn, writing: f.writing, state: f.state, paperOpacity: f.paperOpacity, opacity: f.opacity, visibleGlyphs: f.visibleGlyphs, totalGlyphs: f.totalGlyphs, holdStartMs: f.holdStartMs, leaveAtMs: f.leaveAtMs, hideAtMs: f.hideAtMs } };
+  return withPaperlabEvidence(value, { runId: value.runId, reducedMotion: value.reducedMotion, systemReducedMotion: value.systemReducedMotion, effectiveReducedMotion: value.effectiveReducedMotion, documentHidden: value.documentHidden, rafCount: value.rafCount, renderCount: value.renderCount, frame: { activeMs: f.activeMs, phase: f.phase, burn: f.burn, writing: f.writing, state: f.state, paperOpacity: f.paperOpacity, opacity: f.opacity, visibleGlyphs: f.visibleGlyphs, totalGlyphs: f.totalGlyphs, holdStartMs: f.holdStartMs, leaveAtMs: f.leaveAtMs, hideAtMs: f.hideAtMs } });
 }
 const admissionMessages = Object.freeze({
+  'work-association-unavailable': '已核验 Work 来源，但缺少与界面发送控件的会话关联；本次未从猜测位置显示。',
   none: '入口处理正常。',
   'event-invalid': '入口文件未通过本地目录、格式或时效校验。',
   'event-path-invalid': '入口路径格式无效，未读取。',
@@ -139,13 +196,15 @@ function entrancePathShape(value) {
     productRootNameExpected: windowsPath.basename(text).toLowerCase() === 'summoning-fu-handoff' };
 }
 function entranceArgvShapes(args) {
-  const known = new Set(['--entrance-file', '--session-file', '--session-id', '--diagnostics-file', '--capture-dir', '--read', '--hide', '--quit', '--capture', '--allow-file-access-from-files', '--original-process-start-time', '--user-data-dir']);
+  const known = new Set(['--entrance-file', '--session-file', '--session-id', '--diagnostics-file', '--capture-dir', '--read', '--hide', '--quit', '--capture', '--motion-preview', '--preview-qa-only', '--preview-qa', '--allow-file-access-from-files', '--original-process-start-time', '--user-data-dir']);
   if (!Array.isArray(args)) return [];
   return args.slice(0, 32).map((value, index) => {
     const separator = typeof value === 'string' ? value.indexOf('=') : -1;
     const key = typeof value === 'string' ? value.slice(0, separator < 0 ? undefined : separator) : '';
     const flag = known.has(key) ? key.slice(2) : typeof value === 'string' && value.startsWith('--') ? 'unknown-option' : 'value';
-    return { index, flag, shape: entrancePathShape(value), ...(key === '--entrance-file' && separator >= 0 ? { attachedValue: entrancePathShape(value.slice(separator + 1)) } : {}) };
+    const command = key === '--preview-qa' && separator >= 0 ? value.slice(separator + 1) : null;
+    const previewCommand = command === null ? {} : { previewCommand: previewCommandAllowed(command) || ['hide', 'show', 'close'].includes(command) ? command : 'unknown-command' };
+    return { index, flag, shape: entrancePathShape(value), ...previewCommand, ...(key === '--entrance-file' && separator >= 0 ? { attachedValue: entrancePathShape(value.slice(separator + 1)) } : {}) };
   });
 }
 function parseEntranceArgument(args) {
@@ -163,17 +222,19 @@ function sanitizeReasoningEvidence(value) {
   if (!value || value.source !== 'reported' || !['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(value.value) || !Number.isSafeInteger(value.contextOffset) || value.contextOffset < 0) return { value: null, source: 'unknown', contextOffset: null };
   return { value: value.value, source: 'reported', contextOffset: value.contextOffset };
 }
-const previewCommandAllowed = command => ['replay', 'pause', 'resume', 'stop', 'paper', 'writing', 'seal', 'hold', 'leaving'].includes(command);
+const previewCommandAllowed = command => ['replay', 'pause', 'resume', 'stop', 'point', 'travel', 'unfold', 'paper', 'writing', 'seal', 'hold', 'burning', 'leaving', 'ash', 'speed-0.25', 'speed-0.5', 'speed-1', 'fixture-a', 'fixture-b'].includes(command);
 function sanitizePreviewEvidence(value) {
   if (!value || typeof value.systemReducedMotion !== 'boolean' || value.effectiveReducedMotion !== false || typeof value.documentHidden !== 'boolean' || typeof value.playing !== 'boolean') return null;
-  if (!['paper', 'writing', 'seal', 'hold', 'leaving', 'hidden'].includes(value.phase)) return null;
+  if (!['point', 'travel', 'unfold', 'paper', 'writing', 'seal', 'hold', 'burning', 'ash', 'leaving', 'hidden'].includes(value.phase)) return null;
   const result = { phase: value.phase, systemReducedMotion: value.systemReducedMotion, effectiveReducedMotion: false, documentHidden: value.documentHidden, playing: value.playing };
   for (const key of ['generation', 'renderCount', 'rafCount', 'visibleGlyphs', 'totalGlyphs']) { if (!Number.isSafeInteger(value[key]) || value[key] < 0 || value[key] > 1000000000) return null; result[key] = value[key]; }
   for (const key of ['elapsedMs', 'holdStartMs', 'leaveAtMs', 'hideAtMs']) { if (!Number.isFinite(value[key]) || value[key] < 0 || value[key] > 60000) return null; result[key] = value[key]; }
   for (const key of ['paperOpacity', 'opacity', 'writing']) { if (!Number.isFinite(value[key]) || value[key] < 0 || value[key] > 1) return null; result[key] = value[key]; }
   if (result.visibleGlyphs > result.totalGlyphs) return null;
   result.uiElapsedMs = Number.isFinite(value.uiElapsedMs) && value.uiElapsedMs >= 0 && value.uiElapsedMs <= 60000 ? value.uiElapsedMs : null;
-  return result;
+  result.burn = Number.isFinite(value.burn) && value.burn >= 0 && value.burn <= 1 ? value.burn : null;
+  if (Object.hasOwn(value, 'svgVisible')) { if (typeof value.svgVisible !== 'boolean') return null; result.svgVisible = value.svgVisible; }
+  return withPaperlabEvidence(value, result);
 }
 function desktopSettingsSnapshot({ settings = {}, binding, bindingChanged = false, position }) {
   return { ...settings, version: 3, binding: bindingChanged ? binding : settings.binding ?? null, petPosition: position ? { x: position.x, y: position.y } : settings.petPosition };
@@ -183,4 +244,58 @@ class PreviewReplayGate {
   request() { if (this.ready) return true; this.pending = true; return false; }
   readyNow() { this.ready = true; const replay = this.pending; this.pending = false; return replay; }
 }
-module.exports = { HostClock, clampBounds, controlBounds, entranceBounds, EntranceScheduler, verifyEntranceUntil, startupIntent, sanitizeRenderEvidence, AdmissionEvidence, admissionMessage, entrancePathShape, entranceArgvShapes, parseEntranceArgument, sanitizeReasoningEvidence, previewCommandAllowed, sanitizePreviewEvidence, desktopSettingsSnapshot, PreviewReplayGate, entranceMotionPolicy };
+const sendMessages = Object.freeze({
+  'send-unavailable': '当前发送控件不可订阅；已确认的本次符保持原有时间线。',
+  'composer-unproven': '当前未证明下一次发送控件的归属；已确认的本次符保持原有时间线。',
+  'protocol-invalid': '无效的观察器消息已丢弃。',
+  'work-association-unavailable': '已核验 Work 来源，但界面未提供会话与发送控件的可证明关联，未从猜测位置显示。',
+  'mode-unknown': '尚未识别 Chat / Work 模式；等待可核验的发送控件。',
+  'viewport-unavailable': '尚未取得聊天内容区域，未用窗口外框代替页面中央。',
+  'geometry-invalid': '发送按钮与页面位置不可用或跨显示器，本次未显示。',
+  'geometry-changed': '窗口或页面位置已变化，本次展示已收起。',
+  'observer-unavailable': '发送观察器暂不可用；不会猜测点击或读取消息正文。',
+  'observing': '正在只读观察发送控件；实际事件未取得前不会显示。',
+  'send-invoked': '已观察到 Chat 发送控件调用；这不表示模型开始工作或服务端确认。'
+});
+function sendDiagnostic(reason) { return sendMessages[reason] || sendMessages['observer-unavailable']; }
+function sendDiagnosticInvalidates(reason) { return !['send-unavailable', 'composer-unproven', 'protocol-invalid'].includes(reason); }
+function workAnchorAssociation() { return { verified: false, reason: 'work-association-unavailable' }; }
+function sendOverlayLayout(anchor, viewport, display) {
+  const rect = r => r && ['x', 'y', 'width', 'height'].every(k => Number.isFinite(r[k])) && Math.abs(r.x) <= 131072 && Math.abs(r.y) <= 131072 && r.width > 0 && r.height > 0 && r.width <= 32768 && r.height <= 32768;
+  const inside = (a, b) => a.x >= b.x && a.y >= b.y && a.x + a.width <= b.x + b.width && a.y + a.height <= b.y + b.height;
+  if (![anchor, viewport, display].every(rect) || !inside(anchor, display) || !inside(viewport, display)) return null;
+  const height = Math.min(676, viewport.height - 32, (viewport.width - 32) * 760 / 360);
+  if (height < 180) return null;
+  const width = height * 360 / 760;
+  const target = { x: viewport.x + (viewport.width - width) / 2, y: viewport.y + viewport.height / 2 - height * 375 / 760, width, height };
+  const x = Math.floor(Math.min(anchor.x, target.x)), y = Math.floor(Math.min(anchor.y, target.y));
+  const bounds = { x, y, width: Math.ceil(Math.max(anchor.x + anchor.width, target.x + width) - x), height: Math.ceil(Math.max(anchor.y + anchor.height, target.y + height) - y) };
+  if (!inside(bounds, display)) return null;
+  return Object.freeze({ bounds: Object.freeze(bounds), geometry: Object.freeze({ originRect: Object.freeze({ ...anchor, x: anchor.x - x, y: anchor.y - y }), targetRect: Object.freeze({ ...target, x: target.x - x, y: target.y - y }) }) });
+}
+class SendAdmissionGate {
+  constructor() { this.generation = 0; this.observerId = null; this.sequence = -1; this.monotonicMs = -1; this.retired = new Set(); }
+  invalidate() { this.generation++; }
+  isCurrent(token) { return token === this.generation; }
+  accept(raw, now) {
+    const no = reason => ({ accepted: false, reason });
+    const o = validateUiObservation(raw);
+    if (!o || !Number.isFinite(now)) return no('observer-unavailable');
+    if (this.retired.has(o.observerId)) return no('retired-observer');
+    if (o.observerId !== this.observerId) {
+      if (this.retired.size >= 64) return no('observer-unavailable');
+      if (this.observerId) this.retired.add(this.observerId);
+      this.observerId = o.observerId; this.sequence = -1; this.monotonicMs = -1; this.invalidate();
+    }
+    if (o.sequence <= this.sequence || o.monotonicMs < this.monotonicMs) return no('duplicate');
+    this.sequence = o.sequence; this.monotonicMs = o.monotonicMs;
+    if (o.kind === 'unavailable') { const invalidated = sendDiagnosticInvalidates(o.reason); if (invalidated) this.invalidate(); return { ...no(Object.hasOwn(sendMessages, o.reason) ? o.reason : 'observer-unavailable'), invalidated }; }
+    if (o.kind !== 'send-invoked' || o.host?.package !== 'OpenAI.Codex' || o.mode?.source !== 'explicit-selection' || !['chat', 'work'].includes(o.mode.value) || o.evidence?.invoke !== true || o.evidence?.composerBound !== true || o.evidence?.foreground !== true || o.evidence?.minimized !== false) return no('mode-unknown');
+    if (o.mode.value === 'work') return no('work-association-unavailable');
+    this.invalidate();
+    const fields = ['relay', 'company', 'model', 'harness', 'environment', 'task', 'reasoning'];
+    const metadata = Object.fromEntries(fields.map(f => [f, null])); metadata.sources = Object.fromEntries(fields.map(f => [f, 'unknown']));
+    return { accepted: true, token: this.generation, eventId: 'ui:' + o.observerId + ':' + o.sequence, source: 'chatgpt-uia', confirmation: 'send-invoked', sessionId: null, turnId: null, metadata };
+  }
+}
+module.exports = { HostClock, clampBounds, controlBounds, entranceBounds, independentPetLayout, EntranceScheduler, verifyEntranceUntil, startupIntent, previewQaProfile, samePreviewQaProfile, sanitizeRenderEvidence, sanitizePaperlabEvidence, AdmissionEvidence, admissionMessage, entrancePathShape, entranceArgvShapes, parseEntranceArgument, sanitizeReasoningEvidence, previewCommandAllowed, sanitizePreviewEvidence, desktopSettingsSnapshot, PreviewReplayGate, entranceMotionPolicy, SendAdmissionGate, sendOverlayLayout, workAnchorAssociation, sendDiagnostic, sendDiagnosticInvalidates };

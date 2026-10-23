@@ -5,13 +5,14 @@ const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
 const { performance } = require('node:perf_hooks');
-const { HostClock, entranceBounds, EntranceScheduler, verifyEntranceUntil, startupIntent, sanitizeRenderEvidence, AdmissionEvidence, admissionMessage, entrancePathShape, entranceArgvShapes, parseEntranceArgument, sanitizeReasoningEvidence, previewCommandAllowed, sanitizePreviewEvidence, desktopSettingsSnapshot, PreviewReplayGate, entranceMotionPolicy } = require('./host-state.cjs');
-const { readLastRecordedTarget } = require('./window-target.cjs');
+const { HostClock, entranceBounds, independentPetLayout, EntranceScheduler, verifyEntranceUntil, startupIntent, sanitizeRenderEvidence, AdmissionEvidence, admissionMessage, entrancePathShape, entranceArgvShapes, parseEntranceArgument, sanitizeReasoningEvidence, previewCommandAllowed, sanitizePreviewEvidence, desktopSettingsSnapshot, PreviewReplayGate, entranceMotionPolicy } = require('./host-state.cjs');
+const { SendAdmissionGate, sendOverlayLayout, workAnchorAssociation, sendDiagnostic, sendDiagnosticInvalidates, previewQaProfile, samePreviewQaProfile } = require('./host-state.cjs');
+const { SendObserver } = require('./send-observer.cjs');
 const { EnvelopeBridge } = require('../adapter/envelope.cjs');
 const { RolloutAdapter } = require('../adapter/rollout.cjs');
 const { readEntranceFile, verifyEntranceTurn, applyVerifiedReasoning, SUPPORTED_CLI_VERSIONS } = require('../adapter/entrance-event.cjs');
 const { readChatTitle } = require('../adapter/chat-title.cjs');
-const { EntranceTimeline } = require('../renderer/entrance-timeline.js');
+const { EntranceTimeline, timings: entranceTimings } = require('../renderer/entrance-timeline.js');
 const EXPECTED_VERSION = SUPPORTED_CLI_VERSIONS.join(' / ');
 let pet, reader, preview, tray, adapter, bridge, clock = new HostClock();
 let previewEvidence = null, previewContext = null, previewEvidenceAt = 0, pendingPreview = false;
@@ -19,6 +20,7 @@ let previewReplayGate = new PreviewReplayGate();
 const entrance = new EntranceTimeline(), scheduler = new EntranceScheduler();
 let displayContext = null, pendingTimer = null, expiryTimer = null, expiryKey = '', queuedEntranceFiles = [];
 let entranceCancellation = 0;
+let pendingPresentation = null, presentationGeneration = 0;
 let petAnchor = null;
 let settings = {}, settingsPath, coverage = {}, hidden = false, quitting = false, moving = false, timer;
 let diagnostic = '未绑定会话。请选择本机 Codex 会话文件。';
@@ -39,12 +41,15 @@ const windowLifecycle = {}, readyWindows = new WeakSet();
 let readerRequested = false;
 let renderEvidence = null;
 let visualStages = {};
+let sendObserver = null, observerSuspended = false, observerStatus = 'observing';
+const sendGate = new SendAdmissionGate();
 const liveWindows = () => [pet, reader].filter(w => w && !w.isDestroyed());
 const allowedSender = event => liveWindows().some(w => w.webContents === event.sender);
 function readSettings() {
   try { const v = JSON.parse(fs.readFileSync(settingsPath, 'utf8')); if (v && typeof v === 'object') settings = v; } catch {}
 }
 function saveSettings() {
+  if (runtimeProfile.enabled) return;
   const actual = petAnchor;
   const value = desktopSettingsSnapshot({ settings, binding: bound, bindingChanged, position: actual });
   try { fs.writeFileSync(settingsPath + '.tmp', JSON.stringify(value, null, 2), { mode: 0o600 }); fs.renameSync(settingsPath + '.tmp', settingsPath); } catch { diagnostic = '本机设置未能保存；当前显示仍可使用。'; }
@@ -57,11 +62,14 @@ function motionPolicy() {
 function snapshot() {
   const policy = motionPolicy();
   const now = performance.now(), task = clock.snapshot(now), frame = entrance.snapshot(now, policy.effectiveReducedMotion);
-  const sameTurn = displayContext && task.sessionId === displayContext.sessionId && task.runId === displayContext.turnId;
+  const sameTurn = displayContext?.sessionId && displayContext?.turnId && task.sessionId === displayContext.sessionId && task.runId === displayContext.turnId;
   return { ...task, ...frame, runId: frame.id, sessionId: displayContext?.sessionId || null, turnId: displayContext?.turnId || null, source: displayContext?.source || 'unknown', activeMs: frame.elapsedMs,
-    ...policy, diagnosticsEnabled: Boolean(diagnosticsFile), state: sameTurn ? task.state : 'unknown', hidden: hidden || !frame.visible, diagnostic,
+    ...(pendingPresentation ? { runId: pendingPresentation.eventId, elapsedMs: 0, activeMs: 0, visible: false, phase: 'hidden' } : {}),
+    presentationPreparing: Boolean(pendingPresentation), presentationToken: displayContext?.presentationToken ?? null, presentationMode: displayContext?.presentationMode || 'unknown',
+    ...policy, geometry: displayContext?.layout?.geometry || null, metadata: displayContext?.metadata || frame.metadata, confirmation: displayContext?.confirmation || 'unknown', observerStatus,
+    diagnosticsEnabled: Boolean(diagnosticsFile), state: sameTurn ? task.state : 'unknown', hidden: hidden || !frame.visible, diagnostic,
     binding: displayContext ? { sessionId: displayContext.sessionId, fileName: sameTurn && bound ? path.basename(bound.file) : '入口事件（未绑定当前轮次日志）' } : null,
-    adapterLabel: displayContext?.source === 'codex-user-prompt-submit' ? 'Codex 插件 UserPromptSubmit · 发送后约 5 秒 · 非切换监听' : '手动启动/绑定展示 · 不计为自动接入验收',
+    adapterLabel: displayContext?.source === 'chatgpt-uia' ? 'Chat 发送控件观察 · 不代表服务端确认或模型工作状态' : displayContext?.source === 'codex-user-prompt-submit' ? '已核验 Codex hook · 独立伴随层，不推断当前焦点聊天或发送按钮位置' : '手动绑定/本地预览 · 不计为自动接入验收',
     expectedVersion: EXPECTED_VERSION, titleSource: displayContext?.title?.source || 'pending', pendingEntrance: Boolean(scheduler.pending), departureTarget: displayContext?.target?.source || 'unavailable-local-fold' };
 }
 function broadcast() {
@@ -72,7 +80,8 @@ function broadcast() {
     if (key !== expiryKey) { expiryKey = key; clearTimeout(expiryTimer); const token = value.token; expiryTimer = setTimeout(() => { if (entrance.current?.token === token) broadcast(); }, Math.max(1, value.hideAtMs - value.elapsedMs + 1)); }
   }
   for (const w of liveWindows()) if (!w.webContents.isLoading()) w.webContents.send('fu:snapshot', value);
-  if (diagnosticsFile && performance.now() - diagnosticTick >= 1000) {
+  const diagnosticIntervalMs = runtimeProfile.enabled && !runtimeProfile.interactive ? 250 : 1000;
+  if (diagnosticsFile && performance.now() - diagnosticTick >= diagnosticIntervalMs) {
     diagnosticTick = performance.now();
     const evidence = { at: new Date().toISOString(), platform: process.platform, electron: process.versions.electron, sessionId: value.sessionId, runId: value.runId, state: value.state, activeMs: Math.round(value.activeMs), kind: value.kind, elapsedMs: Math.round(value.elapsedMs), token: value.token, phase: value.phase, visible: value.visible, hideAtMs: value.hideAtMs, titleSource: value.titleSource, source: displayContext?.source || 'unknown', turnId: displayContext?.turnId || null, sourceStartedAtMs: displayContext?.verificationStartedAtMs || null, sourceOffset: displayContext?.verificationOffset ?? null, pendingEntrance: value.pendingEntrance, departureTarget: value.departureTarget, metadataHash: crypto.createHash('sha256').update(JSON.stringify(value.metadata)).digest('hex'), rendererHealth, windowLifecycle, renderEvidence, captureStatus,
       windows: liveWindows().map((w, index) => ({ index, visible: w.isVisible(), focused: w.isFocused(), minimized: w.isMinimized(), bounds: w.getBounds() })), displays: screen.getAllDisplays().map(d => ({ id: d.id, scaleFactor: d.scaleFactor, workArea: d.workArea })) };
@@ -80,6 +89,7 @@ function broadcast() {
     evidence.reasoning = sanitizeReasoningEvidence(displayContext?.reasoningEvidence);
     evidence.systemReducedMotion = value.systemReducedMotion;
     evidence.effectiveReducedMotion = value.effectiveReducedMotion;
+    evidence.observerStatus = observerStatus; evidence.confirmation = value.confirmation;
     evidence.visualStages = visualStages;
     evidence.preview = { open: Boolean(preview && !preview.isDestroyed()), visible: Boolean(preview && !preview.isDestroyed() && preview.isVisible()), source: previewContext?.source || null, evidence: previewEvidence };
     evidence.isolation = { generation: scheduler.generation, sourceWatermark: Number.isFinite(scheduler.sourceWatermark) ? scheduler.sourceWatermark : null, sourceEvent: scheduler.sourceEvent };
@@ -100,11 +110,11 @@ async function captureWindows() {
 async function captureVisualStage(evidence) {
   if (!diagnosticsFile || !captureDirectory || !pet || pet.isDestroyed() || !pet.isVisible() || evidence.documentHidden) return;
   const f = evidence.frame, phase = f.phase;
-  if (!['paper', 'writing', 'hold', 'leaving'].includes(phase) || visualStages[phase]) return;
-  if (phase === 'paper' && !(f.paperOpacity >= 0.2 && f.paperOpacity <= 0.8 && f.visibleGlyphs === 0)) return;
+  if (!['unfold', 'writing', 'hold', 'burning'].includes(phase) || visualStages[phase]) return;
+  if (phase === 'unfold' && f.visibleGlyphs !== 0) return;
   if (phase === 'writing' && !(f.writing >= 0.25 && f.writing <= 0.75 && f.visibleGlyphs > 0 && f.visibleGlyphs < f.totalGlyphs)) return;
   if (phase === 'hold' && !(f.writing === 1 && f.visibleGlyphs === f.totalGlyphs)) return;
-  if (phase === 'leaving' && !(f.opacity >= 0.3 && f.opacity <= 0.7)) return;
+  if (phase === 'burning' && !(f.burn >= 0.3 && f.burn <= 0.7)) return;
   const stages = visualStages, entry = { before: evidence, capture: null, after: null, status: 'pending' };
   stages[phase] = entry;
   try {
@@ -133,42 +143,113 @@ function secureWindow(options, filename) {
 }
 function reposition() {
   if (moving || !pet || pet.isDestroyed()) return;
+  if (displayContext?.layout) { pet.setBounds(displayContext.layout.bounds); return; }
   moving = true;
   const cb = petAnchor || pet.getBounds(), area = screen.getDisplayMatching(cb).workArea;
   petAnchor = entranceBounds({ x: cb.x, y: cb.y }, area); pet.setBounds(petAnchor);
   moving = false;
 }
-function setVisible(value) { hidden = !value; if (!value) { scheduler.cancel(); clearTimeout(pendingTimer); entranceCancellation++; } if (value && entrance.snapshot(performance.now(), motionPolicy().effectiveReducedMotion).visible) { reposition(); pet.showInactive(); } else pet.hide(); broadcast(); }
+function cancelObservedPresentation(reason) {
+  observerStatus = reason;
+  if (displayContext?.presentationMode === 'independent-hook') { sendGate.invalidate(); broadcast(); return; }
+  sendGate.invalidate(); entranceCancellation++; scheduler.cancel(); clearTimeout(pendingTimer);
+  pendingPresentation = null; presentationGeneration++;
+  if (entrance.current) entrance.cancel(entrance.current.token);
+  observerStatus = reason; diagnostic = sendDiagnostic(reason); broadcast();
+}
+function setVisible(value) { hidden = !value; if (!value) { scheduler.cancel(); clearTimeout(pendingTimer); pendingPresentation = null; presentationGeneration++; entranceCancellation++; sendGate.invalidate(); if (entrance.current) entrance.cancel(entrance.current.token); } if (value && entrance.snapshot(performance.now(), motionPolicy().effectiveReducedMotion).visible) { reposition(); pet.showInactive(); } else pet.hide(); broadcast(); }
+function acceptUiObservation(observation) {
+  if (quitting || observerSuspended) return;
+  const admission = sendGate.accept(observation, performance.now());
+  if (!admission.accepted) {
+    if (['duplicate', 'retired-observer'].includes(admission.reason)) return;
+    if (admission.invalidated || observation.kind === 'send-invoked') cancelObservedPresentation(admission.reason);
+    else { observerStatus = admission.reason; diagnostic = sendDiagnostic(admission.reason); broadcast(); }
+    return;
+  }
+  let layout;
+  try {
+    const anchor = screen.screenToDipRect(null, observation.anchor), viewport = screen.screenToDipRect(null, observation.viewport);
+    const display = screen.getDisplayMatching(viewport);
+    layout = sendOverlayLayout(anchor, viewport, display.workArea);
+  } catch {}
+  if (!layout) { cancelObservedPresentation('geometry-invalid'); return; }
+  if (!sendGate.isCurrent(admission.token)) return;
+  // Metadata comes from a fresh unknown-valued object, never from the previous Work context.
+  scheduler.cancel(); clearTimeout(pendingTimer); entranceCancellation++;
+  observerStatus = 'send-invoked';
+  applyEntrance({ ...admission, layout, presentationMode: 'observed-chat', title: { value: null, source: 'pending' } });
+}
+function independentHookLayout() {
+  const saved = petAnchor || pet.getBounds(), area = screen.getDisplayMatching(saved).workArea;
+  const layout = independentPetLayout(saved, area);
+  if (layout) { const target = layout.geometry.targetRect; petAnchor = { x: layout.bounds.x + target.x, y: layout.bounds.y + target.y, width: target.width, height: target.height }; }
+  return layout;
+}
 function applyEntrance(context) {
+  clearTimeout(pendingTimer); pendingPresentation = null; presentationGeneration++;
   if (bound && bound.sessionId !== context.sessionId) { adapter?.stop(); adapter = null; bound = null; bindingChanged = true; clock = new HostClock(); }
   const title = context.title || { value: null, source: 'pending' };
   const metadata = { ...(context.metadata || {}), sources: { ...(context.metadata?.sources || context.provenance || {}) }, presentation: { mode: 'entrance', sessionId: context.sessionId, chatTitle: { value: title.value, source: title.source === 'codex-session-index' ? 'reported' : 'unknown' } } };
   // Prompt bodies are never presentation content, even for manual rollout binding.
   metadata.task = title.value; metadata.fullTask = title.value; metadata.fullTaskTruncated = false; metadata.sources.task = title.value ? 'reported' : 'unknown';
-  displayContext = { ...context, title, metadata }; renderEvidence = null; visualStages = {};
-  entrance.trigger(context.eventId, performance.now(), metadata); hidden = false;
-  diagnostic = '外部伴随窗口：正常入口播放完整动效，纸先显现、字序写入，完整展示 10 秒后轻收符淡出。不修改 Windows 动画设置。';
+  displayContext = { ...context, title, metadata, presentationToken: presentationGeneration }; renderEvidence = null; visualStages = {};
+  if (entrance.current) entrance.cancel(entrance.current.token);
+  if (!context.layout) {
+    if (entrance.current) entrance.cancel(entrance.current.token);
+    diagnostic = '仅载入绑定内容。未取得实际发送按钮与页面区域；可打开明确标注的本地预览。';
+    pet.hide(); broadcast(); return;
+  }
+  pendingPresentation = displayContext; hidden = true; pet.hide();
+  diagnostic = '正在准备本机 Paperlab 纸张与字体；准备完成后开始本次完整动效。';
+  const prepared = pendingPresentation;
+  pendingTimer = setTimeout(() => { if (pendingPresentation !== prepared) return; pendingPresentation = null; presentationGeneration++; diagnostic = 'Paperlab 纸张未能在本机准备完成，请打开预览查看渲染状态。'; broadcast(); }, 12000);
+  broadcast();
+}
+async function rendererReady(event, value) {
+  if (!pet || event.sender !== pet.webContents || !value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== 3 || !['runId', 'token', 'status'].every(key => Object.hasOwn(value, key)) || typeof value.runId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/.test(value.runId) || !Number.isSafeInteger(value.token) || value.token < 1 || !['ready', 'error'].includes(value.status)) return;
+  const prepared = pendingPresentation;
+  const current = () => !quitting && !observerSuspended && pendingPresentation === prepared && prepared?.eventId === value.runId && prepared.presentationToken === value.token;
+  if (!current()) return;
+  if (value.status === 'error') { clearTimeout(pendingTimer); pendingPresentation = null; presentationGeneration++; diagnostic = 'Paperlab 本机渲染准备失败；本次没有播放，未改变任务状态。'; broadcast(); return; }
+  if (prepared.verifiedEvent) {
+    const verification = await verifyEntranceTurn(prepared.verifiedEvent);
+    if (!current()) return;
+    if (!verification.verified || verification.sessionId !== prepared.sessionId || verification.turnId !== prepared.turnId || verification.startedAtMs !== prepared.verificationStartedAtMs || verification.offset !== prepared.verificationOffset) {
+      clearTimeout(pendingTimer); pendingPresentation = null; presentationGeneration++; diagnostic = admissionMessage(verification.reason || 'source-changed'); broadcast(); return;
+    }
+  }
+  if (!current()) return;
+  clearTimeout(pendingTimer); pendingPresentation = null;
+  entrance.trigger(prepared.eventId, performance.now(), prepared.metadata); hidden = false;
+  diagnostic = prepared.presentationMode === 'independent-hook' ? '已核验本次会话来源，在独立伴随层展开、落字、完整保持 5 秒并燃尽；不推断焦点聊天或按钮位置。' : '从已观察的发送控件展开至页面中央，完整停留 5 秒后燃尽；不表示任务完成。';
+  if (prepared.verifiedEvent) recordAdmission('applied', prepared.verifiedEvent, prepared.receivedAt);
   reposition(); pet.showInactive(); broadcast();
 }
 function showMotionPreview() {
-  if (preview && !preview.isDestroyed()) { if (preview.isMinimized()) preview.restore(); preview.show(); preview.focus(); if (previewReplayGate.request()) preview.webContents.send('fu:preview-command', 'replay'); return; }
+  if (preview && !preview.isDestroyed()) { if (preview.isMinimized()) preview.restore(); if (runtimeProfile.enabled && !runtimeProfile.interactive) preview.showInactive(); else { preview.show(); preview.focus(); } if (previewReplayGate.request()) preview.webContents.send('fu:preview-command', 'replay'); return; }
   const sample = { relay: '本地示例', company: '原创示例', model: '示例模型', harness: 'Codex', environment: '本机预览', reasoning: 'xhigh', sources: Object.fromEntries(['relay', 'company', 'model', 'harness', 'environment', 'reasoning', 'task'].map(field => [field, 'demo'])), presentation: { mode: 'entrance', sessionId: 'local-preview-example', chatTitle: { value: '本地示例 · 观纸落墨', source: 'manual' } } };
   previewContext = { source: displayContext?.metadata ? 'frozen-current' : 'example', metadata: JSON.parse(JSON.stringify(displayContext?.metadata || sample)) };
   previewEvidence = null; previewEvidenceAt = 0; previewReplayGate = new PreviewReplayGate();
-  preview = secureWindow({ width: 1080, height: 880, minWidth: 780, minHeight: 650, title: '召唤符 · 完整动效预览', backgroundColor: '#171610' }, 'motion-preview.html');
+  const interactive = !runtimeProfile.enabled || runtimeProfile.interactive === true;
+  preview = secureWindow({ width: 1080, height: 880, minWidth: 780, minHeight: 650, focusable: interactive, resizable: interactive, maximizable: interactive, minimizable: interactive, fullscreenable: interactive, title: '召唤符 · Paperlab 完整动效', backgroundColor: '#171610' }, 'motion-preview.html');
   const opened = preview;
-  opened.once('ready-to-show', () => { if (!opened.isDestroyed()) { opened.show(); opened.focus(); } });
+  opened.once('ready-to-show', () => { if (!opened.isDestroyed()) { if (runtimeProfile.enabled && !runtimeProfile.interactive) opened.showInactive(); else { opened.show(); opened.focus(); } } });
   opened.on('closed', () => { if (preview === opened) preview = null; });
 }
 function previewQACommand(command) {
   if (!diagnosticsFile || !captureDirectory || !preview || preview.isDestroyed()) return;
   if (command === 'hide') preview.hide();
-  else if (command === 'show') { preview.show(); preview.focus(); }
+  else if (command === 'show') { if (runtimeProfile.enabled && !runtimeProfile.interactive) preview.showInactive(); else { preview.show(); preview.focus(); } }
   else if (command === 'close') preview.close();
   else if (previewCommandAllowed(command)) preview.webContents.send('fu:preview-command', command);
 }
+function registerPreviewIPC() {
+  ipcMain.handle('fu:preview-initial', event => { if (!preview || preview.isDestroyed() || event.sender !== preview.webContents) return null; return { ...previewContext, coverage, qaOnly: runtimeProfile.enabled && !runtimeProfile.interactive }; });
+  ipcMain.on('fu:preview-evidence', (event, value) => { if (!preview || preview.isDestroyed() || event.sender !== preview.webContents || performance.now() - previewEvidenceAt < 80) return; const checked = sanitizePreviewEvidence(value); if (checked) { previewEvidence = checked; previewEvidenceAt = performance.now(); if (!previewReplayGate.ready && previewReplayGate.readyNow()) preview.webContents.send('fu:preview-command', 'replay'); } });
+}
 async function acceptEntranceFile(file) {
-  const cancellation = entranceCancellation, receivedAt = performance.now(), dueAt = receivedAt + 5000;
+  const cancellation = entranceCancellation, receivedAt = performance.now(), deadline = receivedAt + 5000;
   recordAdmission('received', null, receivedAt);
   const isActive = () => !quitting && cancellation === entranceCancellation;
   let readReason = 'event-invalid';
@@ -178,32 +259,22 @@ async function acceptEntranceFile(file) {
   if (!isActive()) return;
   if (!event) { recordAdmission('read-rejected', null, receivedAt, readReason); diagnostic = admissionMessage(readReason); broadcast(); return; }
   if (scheduler.seen.has(event.eventId)) { recordAdmission('verify-rejected', event, receivedAt, 'duplicate'); return; }
-  const initialVerification = await verifyEntranceUntil({ verify: () => verifyEntranceTurn(event), deadline: dueAt, now: () => performance.now(), isActive });
+  const initialVerification = await verifyEntranceUntil({ verify: () => verifyEntranceTurn(event), deadline, now: () => performance.now(), isActive });
   if (!isActive()) { recordAdmission('verify-rejected', event, receivedAt, 'cancelled'); return; }
   if (!initialVerification.verified) { recordAdmission('verify-rejected', event, receivedAt, initialVerification.reason); diagnostic = admissionMessage(initialVerification.reason); broadcast(); return; }
   // Only root task_started source time orders independent sessions, never receipt/file completion time.
   if (!scheduler.acceptSource(event.eventId, initialVerification.startedAtMs)) { recordAdmission('verify-rejected', event, receivedAt, 'source-order'); diagnostic = admissionMessage('source-order'); broadcast(); return; }
-  const token = scheduler.queue(event, receivedAt); if (token === null) return;
+  const token = scheduler.queue(event, performance.now());
+  if (token === null) return;
+  const candidateCurrent = () => isActive() && scheduler.isCurrent(token);
+  const verification = initialVerification.contextMissing ? await verifyEntranceUntil({ verify: () => verifyEntranceTurn(event), deadline: performance.now() + 750, now: () => performance.now(), isActive: candidateCurrent, waitForContext: true }) : initialVerification;
+  if (!candidateCurrent()) return;
+  if (!verification.verified) { recordAdmission('verify-rejected', event, receivedAt, verification.reason); return; }
+  const title = await readChatTitle(event.sessionId);
+  if (!candidateCurrent() || !scheduler.take(token, performance.now())) return;
+  const verified = applyVerifiedReasoning(event, verification);
   recordAdmission('queued', event, receivedAt);
-  clearTimeout(pendingTimer);
-  if (entrance.current) entrance.cancel(entrance.current.token);
-  diagnostic = '已收到发送事件，约 5 秒后显示召唤符。'; broadcast();
-  pendingTimer = setTimeout(async () => {
-    const selected = scheduler.take(token, performance.now()); if (!selected) return;
-    try {
-      const verified = await verifyEntranceUntil({ verify: () => verifyEntranceTurn(selected), deadline: dueAt + 750, now: () => performance.now(), isActive: () => isActive() && scheduler.isCurrent(token), waitForContext: true });
-      if (!scheduler.isCurrent(token)) return;
-      if (!verified.verified) { recordAdmission('verify-rejected', selected, receivedAt, verified.reason); diagnostic = admissionMessage(verified.reason); broadcast(); return; }
-      if (!scheduler.acceptSource(selected.eventId, verified.startedAtMs)) { recordAdmission('verify-rejected', selected, receivedAt, 'source-order'); diagnostic = admissionMessage('source-order'); broadcast(); return; }
-      const title = await readChatTitle(selected.sessionId);
-      const target = await readLastRecordedTarget(screen.getAllDisplays().map(display => display.workArea));
-      if (!scheduler.isCurrent(token)) return;
-      const enriched = applyVerifiedReasoning(selected, verified);
-      const reasoningEvidence = sanitizeReasoningEvidence({ value: enriched.metadata.reasoning, source: enriched.provenance.reasoning, contextOffset: verified.reasoning?.contextOffset });
-      applyEntrance({ ...enriched, title, target, reasoningEvidence, source: 'codex-user-prompt-submit', verificationOffset: verified.offset, verificationStartedAtMs: verified.startedAtMs });
-      recordAdmission('applied', selected, receivedAt);
-    } catch { if (scheduler.isCurrent(token)) { recordAdmission('verify-rejected', selected, receivedAt, 'verification-failed'); diagnostic = admissionMessage('verification-failed'); broadcast(); } }
-  }, Math.max(1, dueAt - performance.now() + 1));
+  applyEntrance({ ...verified, source: 'codex-user-prompt-submit', confirmation: 'verified-root-turn', title, layout: independentHookLayout(), presentationMode: 'independent-hook', verifiedEvent: event, verificationStartedAtMs: verification.startedAtMs, verificationOffset: verification.offset, reasoningEvidence: verification.reasoning, receivedAt });
 }
 function showReader() {
   readerRequested = true;
@@ -216,9 +287,8 @@ function contextMenu() {
     { label: '展开读符', click: showReader },
     { label: '预览完整动效', click: showMotionPreview },
     { label: '隐藏当前符', click: () => setVisible(false) },
-    { label: '重播当前符（调试）', enabled: Boolean(displayContext), click: () => { if (displayContext) { scheduler.cancel(); clearTimeout(pendingTimer); applyEntrance({ ...displayContext, eventId: 'debug:' + crypto.randomUUID(), source: 'manual-debug' }); } } },
+    { label: '在独立示例窗口重播', click: showMotionPreview },
     { label: '锁定另一会话文件…', click: chooseBinding },
-    { label: '移至当前屏幕右下角', click: () => { const a = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea; petAnchor = entranceBounds(null, a); pet.setBounds(petAnchor); saveSettings(); } },
     { type: 'separator' }, { label: '退出召唤符', click: () => app.quit() }
   ]).popup();
 }
@@ -233,9 +303,8 @@ async function bind(file, sessionId) {
   adapter = selected;
   await selected.start();
   const title = await readChatTitle(sessionId);
-  const target = await readLastRecordedTarget(screen.getAllDisplays().map(display => display.workArea));
   if (adapter !== selected || scheduler.pending) return;
-  applyEntrance({ sessionId, turnId: clock.session.runId, eventId: 'manual:' + crypto.randomUUID(), title, target, metadata: clock.session.metadata || {}, source: 'manual-binding' });
+  applyEntrance({ sessionId, turnId: clock.session.runId, eventId: 'manual:' + crypto.randomUUID(), title, metadata: clock.session.metadata || {}, source: 'manual-binding' });
   saveSettings(); broadcast();
 }
 async function chooseBinding() {
@@ -255,16 +324,42 @@ function rejectEntranceArguments() {
   const now = performance.now(); recordAdmission('received', null, now); recordAdmission('read-rejected', null, now, 'event-arguments-invalid');
   diagnostic = admissionMessage('event-arguments-invalid'); if (pet && reader) broadcast();
 }
-// A fixed product cache is shared with the plugin; no arbitrary CLI data root is trusted.
-app.setPath('userData', path.join(app.getPath('appData'), 'summoning-fu-handoff'));
-if (!app.requestSingleInstanceLock() || process.argv.includes('--quit')) app.quit();
+// Normal operation shares only the fixed product cache with the plugin.
+// Explicit preview QA uses a distinct, validated profile before taking its lock.
+const runtimeProfile = previewQaProfile(process.argv);
+if (runtimeProfile.valid) app.setPath('userData', runtimeProfile.enabled ? runtimeProfile.userData : path.join(app.getPath('appData'), 'summoning-fu-handoff'));
+if (!runtimeProfile.valid || !app.requestSingleInstanceLock() || process.argv.includes('--quit')) app.quit();
 else {
   app.setName('Summoning Fu');
-  app.on('second-instance', (_event, args) => { if (diagnosticsFile) secondInstanceArgvShape = entranceArgvShapes(args); if (args.includes('--quit')) { app.quit(); return; } const parsed = parseArgs(args); if (parsed.entranceError) { rejectEntranceArguments(); return; } const entry = parsed.entranceFile; if (entry) { if (!pet || !reader) queuedEntranceFiles.push(entry); else void acceptEntranceFile(entry); return; } if (!pet || !reader) { if (parsed.motionPreview) pendingPreview = true; return; } if (parsed.motionPreview) showMotionPreview(); else if (parsed.previewQA) previewQACommand(parsed.previewQA); else if (args.includes('--hide')) setVisible(false); else if (args.includes('--read')) showReader(); else if (args.includes('--capture')) void captureWindows(); else showReader(); });
+  app.on('second-instance', (_event, args) => {
+    if (runtimeProfile.enabled) {
+      if (!samePreviewQaProfile(process.argv, args)) return;
+      if (diagnosticsFile) secondInstanceArgvShape = entranceArgvShapes(args);
+      const parsed = parseArgs(args);
+      if (args.includes('--quit')) app.quit();
+      else if (parsed.previewQA) previewQACommand(parsed.previewQA);
+      else if (args.includes('--capture')) void captureWindows();
+      else if (parsed.motionPreview) showMotionPreview();
+      return;
+    }
+    if (previewQaProfile(args).enabled) return;
+    if (diagnosticsFile) secondInstanceArgvShape = entranceArgvShapes(args); if (args.includes('--quit')) { app.quit(); return; } const parsed = parseArgs(args); if (parsed.entranceError) { rejectEntranceArguments(); return; } const entry = parsed.entranceFile; if (entry) { if (!pet || !reader) queuedEntranceFiles.push(entry); else void acceptEntranceFile(entry); return; } if (!pet || !reader) { if (parsed.motionPreview) pendingPreview = true; return; } if (parsed.motionPreview) showMotionPreview(); else if (parsed.previewQA) previewQACommand(parsed.previewQA); else if (args.includes('--hide')) setVisible(false); else if (args.includes('--read')) showReader(); else if (args.includes('--capture')) void captureWindows(); else showReader();
+  });
   app.on('window-all-closed', () => {});
-  app.on('before-quit', () => { quitting = true; clearInterval(timer); clearTimeout(pendingTimer); clearTimeout(expiryTimer); scheduler.cancel(); captureTimers.forEach(clearTimeout); adapter?.stop(); saveSettings(); tray?.destroy(); });
+  app.on('before-quit', () => { quitting = true; pendingPresentation = null; presentationGeneration++; sendObserver?.stop(); clearInterval(timer); clearTimeout(pendingTimer); clearTimeout(expiryTimer); scheduler.cancel(); captureTimers.forEach(clearTimeout); adapter?.stop(); saveSettings(); tray?.destroy(); });
   app.whenReady().then(async () => {
     Menu.setApplicationMenu(null);
+    if (runtimeProfile.enabled) {
+      try { coverage = JSON.parse(fs.readFileSync(path.join(__dirname, '../assets/fonts/coverage.json'), 'utf8')); } catch {}
+      session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
+      session.defaultSession.setPermissionCheckHandler(() => false);
+      session.defaultSession.webRequest.onBeforeRequest((details, callback) => callback({ cancel: !details.url.startsWith('file:') && !details.url.startsWith('data:') && !details.url.startsWith('devtools:') }));
+      const args = parseArgs();
+      if (args.diagnosticsFile && path.isAbsolute(args.diagnosticsFile)) diagnosticsFile = args.diagnosticsFile;
+      if (args.captureDir && path.isAbsolute(args.captureDir)) { try { await fs.promises.mkdir(args.captureDir, { recursive: true }); captureDirectory = args.captureDir; } catch {} }
+      observerStatus = 'preview-only'; diagnostic = '独立示例预览：未启动发送观察器，也未读取或绑定会话。';
+      registerPreviewIPC(); timer = setInterval(broadcast, 250); showMotionPreview(); return;
+    }
     settingsPath = path.join(app.getPath('userData'), 'summoning-fu-settings.json'); readSettings();
     try {
       const aliasPath = app.isPackaged ? path.join(path.dirname(process.execPath), 'display-aliases.json') : path.join(__dirname, '../config/display-aliases.json');
@@ -281,20 +376,20 @@ else {
     pet.setIgnoreMouseEvents(true, { forward: true });
     reader = secureWindow({ width: 960, height: 760, minWidth: 620, minHeight: 480, title: '召唤符 · 展开读符', backgroundColor: '#171610' }, 'reader.html');
     reader.on('close', event => { if (!quitting) { event.preventDefault(); readerRequested = false; reader.hide(); } });
-    for (const name of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(name, reposition);
+    for (const name of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(name, () => cancelObservedPresentation('geometry-changed'));
     const pixels = Buffer.alloc(32 * 32 * 4);
     for (let y = 2; y < 30; y++) for (let x = 9; x < 23; x++) { const i = (y * 32 + x) * 4; const ink = (y > 5 && y < 25 && x > 14 && x < 18) || (y === 7 && x > 11 && x < 21); pixels[i] = ink ? 30 : 139; pixels[i + 1] = ink ? 42 : 215; pixels[i + 2] = ink ? 157 : 244; pixels[i + 3] = 255; }
     const icon = nativeImage.createFromBitmap(pixels, { width: 32, height: 32, scaleFactor: 1 });
     tray = new Tray(icon); tray.setToolTip('召唤符 · Codex 插件伴随窗口'); tray.on('click', showReader); tray.on('right-click', contextMenu);
     ipcMain.handle('fu:initial', event => { if (!allowedSender(event)) return null; return { snapshot: snapshot(), coverage }; });
-    ipcMain.handle('fu:preview-initial', event => { if (!preview || preview.isDestroyed() || event.sender !== preview.webContents) return null; return { ...previewContext, coverage }; });
-    ipcMain.on('fu:preview-evidence', (event, value) => { if (!preview || preview.isDestroyed() || event.sender !== preview.webContents || performance.now() - previewEvidenceAt < 80) return; const checked = sanitizePreviewEvidence(value); if (checked) { previewEvidence = checked; previewEvidenceAt = performance.now(); if (!previewReplayGate.ready && previewReplayGate.readyNow()) preview.webContents.send('fu:preview-command', 'replay'); } });
+    ipcMain.on('fu:renderer-ready', (event, value) => { void rendererReady(event, value); });
+    registerPreviewIPC();
     ipcMain.on('fu:render-evidence', (event, value) => { if (!pet || event.sender !== pet.webContents) return; const checked = sanitizeRenderEvidence(value); if (checked && checked.runId === entrance.current?.id) { renderEvidence = checked; void captureVisualStage(checked); } });
     ipcMain.on('fu:action', (event, action) => { if (!allowedSender(event)) return;
       if (action === 'read') showReader(); else if (action === 'motion-preview') showMotionPreview(); else if (action === 'hide') setVisible(false); else if (action === 'show') setVisible(true); else if (action === 'choose') chooseBinding(); else if (action === 'menu') contextMenu(); else if (action === 'quit') app.quit(); else if (action === 'acknowledge' && clock.session.state === 'completed') { setVisible(false); readerRequested = false; reader.hide(); }
     });
-    powerMonitor.on('suspend', () => { entranceCancellation++; clock.suspend(performance.now()); adapter?.suspend(); scheduler.cancel(); clearTimeout(pendingTimer); if (entrance.current) entrance.cancel(entrance.current.token); diagnostic = '系统睡眠：当前展示已收起，等待新发送事件。'; broadcast(); });
-    powerMonitor.on('resume', () => { clock.suspend(performance.now()); adapter?.resume(); diagnostic = '睡眠恢复：等待新的可信会话事件。'; broadcast(); });
+    powerMonitor.on('suspend', () => { observerSuspended = true; pendingPresentation = null; presentationGeneration++; sendObserver?.stop(); sendGate.invalidate(); entranceCancellation++; clock.suspend(performance.now()); adapter?.suspend(); scheduler.cancel(); clearTimeout(pendingTimer); if (entrance.current) entrance.cancel(entrance.current.token); diagnostic = '系统睡眠：当前展示已收起，等待新发送事件。'; broadcast(); });
+    powerMonitor.on('resume', () => { observerSuspended = false; clock.suspend(performance.now()); adapter?.resume(); sendObserver?.start(); diagnostic = '睡眠恢复：等待新的可信发送控件事件。'; broadcast(); });
     await Promise.all(liveWindows().map(w => new Promise(resolve => { if (!w.webContents.isLoading()) resolve(); else w.webContents.once('did-finish-load', resolve); })));
     timer = setInterval(broadcast, 250);
     const args = parseArgs(); if (args.diagnosticsFile && path.isAbsolute(args.diagnosticsFile)) diagnosticsFile = args.diagnosticsFile;
@@ -306,6 +401,14 @@ else {
     if (intent.hidden) setVisible(false);
     if (intent.read && !args.entranceFile && !args.entranceError && !args.motionPreview) showReader();
     if (args.motionPreview || pendingPreview) { pendingPreview = false; showMotionPreview(); }
+    if (!args.motionPreview) {
+      sendObserver = new SendObserver({ presentationTotalMs: entranceTimings.totalMs, onObservation: acceptUiObservation, onDiagnostic: value => {
+        if (quitting || observerSuspended) return;
+        if (sendDiagnosticInvalidates(value?.reason)) cancelObservedPresentation(value?.reason);
+        else { observerStatus = value.reason; diagnostic = sendDiagnostic(value.reason); broadcast(); }
+      } });
+      sendObserver.start();
+    }
     if (args.entranceError) rejectEntranceArguments();
     if (args.entranceFile) await acceptEntranceFile(args.entranceFile);
     for (const file of queuedEntranceFiles) await acceptEntranceFile(file); queuedEntranceFiles = [];

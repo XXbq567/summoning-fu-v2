@@ -172,4 +172,7 @@ async function main() {
     process.stdout.write(JSON.stringify({ result: report.result, report: path.join(output, 'report.json'), cases: report.cases.length, failure: report.failure || null }) + '\n');
   }
 }
-main().catch(() => { process.stderr.write('QA preflight failed. Check package root, permissions, and APPDATA alias equivalence.\n'); process.exitCode = 1; });
+if (require('../package.json').version !== '0.4.1') {
+  process.stderr.write('Legacy hook GUI QA is disabled for the current strict-send candidate; no runtime was started. Use isolated preview QA, and verify real source association separately.\n');
+  process.exitCode = 1;
+} else main().catch(() => { process.stderr.write('QA preflight failed. Check package root, permissions, and APPDATA alias equivalence.\n'); process.exitCode = 1; });
