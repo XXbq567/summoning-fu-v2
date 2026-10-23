@@ -1,0 +1,20 @@
+召唤符 0.4.1 公共源码阶段存档
+
+先读 README.md，再读 docs/PLUGIN.md。
+需要 Windows x64、Node.js >=22。Codex 来源仅兼容精确版本 0.163.0-alpha.10.2 / 0.163.0-alpha.11。
+
+源码目录依次执行：
+npm ci
+npm test
+npm run build
+npm start
+
+自动入口另需构建与安装本地插件市场：
+npm run package:desktop
+npm run package:plugin
+
+按 docs/PLUGIN.md 审阅并信任指定 UserPromptSubmit hook。
+仅打开或切换聊天不会触发。新根 turn 发送后约5秒显示，正常动效14秒；不修改系统设置，不表示任务完成。
+
+原创代码 UNLICENSED，公开源码不等于开源授权。
+公开目录无真实任务图片、个人配置、会话日志或内部截图。

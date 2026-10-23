@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "productVersion": "0.4.1",
+  "classification": "PUBLIC_SOURCE_STAGE_ARCHIVE",
+  "route": "codex-hook-and-independent-electron-companion",
+  "platform": "Windows x64",
+  "nodePrerequisite": ">=22",
+  "supportedCliVersions": ["0.163.0-alpha.10.2", "0.163.0-alpha.11"],
+  "trigger": "UserPromptSubmit with verified new root turn",
+  "switchOnlyTrigger": false,
+  "nativePetApi": false,
+  "officialAppModified": false,
+  "systemAnimationSettingsModified": false,
+  "effectiveReducedMotion": false,
+  "presentation": { "delayMsApproximate": 5000, "paperMs": 650, "writingMs": 2100, "sealMs": 250, "holdMs": 10000, "leaveMs": 1000 },
+  "verification": {
+    "priorImplementationTests": { "passed": 97, "attribution": "implementation maintainer report; publication rerun pending" },
+    "windowsFixtureHookToGui": "PASS: ordinary, local-drive namespace, verified equivalent app-directory alias",
+    "latestNaturalClientRootTurn": "NOT_TESTED",
+    "multiMonitorFullscreenSleep": "NOT_TESTED",
+    "otherOperatingSystems": "NOT_TESTED"
+  },
+  "originalCodeLicense": "UNLICENSED",
+  "privateRuntimeEvidenceIncluded": false
+}

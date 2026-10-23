@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>召唤符 · 语义与燃烧样例</title>
+<style>
+@font-face{font-family:FuBrush;src:url('{{FONT_DATA}}') format('truetype');font-display:block}
+:root{color-scheme:dark;--paper:#f3d38e;--ink:#9e281d;--bg:#151310;--line:#42372a;--text:#e6d9c3;--muted:#aea08a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}button,input,textarea,select{font:inherit}button{cursor:pointer}button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid #f4c46e;outline-offset:4px}button,input,textarea,select{color:inherit}button:disabled{opacity:.4;cursor:default}a{color:#d6ab71}header{max-width:1180px;margin:auto;padding:30px 36px 20px;display:flex;justify-content:space-between;align-items:baseline;gap:24px;border-bottom:1px solid var(--line)}h1{font:38px/1 FuBrush,serif;margin:0;letter-spacing:5px}.subhead{font-size:12px;color:var(--muted);letter-spacing:.2px}main{max-width:1180px;padding:20px 36px 30px;margin:auto;display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:65px;align-items:start}.stage{position:relative;min-height:660px;display:flex;justify-content:center;align-items:center;background:radial-gradient(ellipse at center,#c8782518,transparent 66%);isolation:isolate}.mount{width:310px;aspect-ratio:360/760;filter:drop-shadow(0 12px 28px #0009)}.mount svg{display:block;width:100%;height:auto;overflow:visible}.vertical-note{position:absolute;left:13%;top:67px;writing-mode:vertical-rl;font:17px FuBrush,serif;letter-spacing:5px;color:#9e7c50}.status-line{position:absolute;bottom:3px;left:0;right:0;text-align:center;color:#ba9a6a;font-size:12px;letter-spacing:1px}.status-line strong{color:#e6c58a;font-weight:400}.controls{border-top:1px solid var(--line);padding:16px 0}.actions{display:flex;gap:9px;flex-wrap:wrap}button,.download{border:1px solid #65503a;background:#231c16;border-radius:3px;padding:9px 14px;text-align:center;font-size:12px}button:hover{background:#32261b}button.primary{background:#bd8c56;color:#1f1710;border-color:#cd9f6d;min-width:134px}button.primary:hover{background:#d3a16b}button[aria-pressed=true]{border-color:#ddb16f;background:#3a2b1c}.choices{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;align-items:center;color:var(--muted);font-size:12px}.choices select{background:#241e17;border:1px solid #5c4935;padding:7px 9px;border-radius:3px}.choices label{display:flex;align-items:center;gap:5px}.footnote{color:#aa9b84;font-size:11px;margin:14px 0 0;line-height:1.9}.editor{padding-top:22px}.editor h2{font:25px FuBrush,serif;margin:0 0 5px}.editor p{font-size:12px;color:var(--muted);margin:0 0 20px}.fields{display:grid;grid-template-columns:1fr 1fr;gap:15px 12px}.fields label{display:block;color:#b9a98e;font-size:11px}.fields input,.fields textarea{display:block;width:100%;margin-top:5px;padding:9px 10px;border:1px solid #4c3b2a;background:#1d1812;border-radius:3px;font-size:13px;color:#f0d9b1;resize:vertical}.fields .wide{grid-column:1/-1}.fields textarea{height:92px;min-height:75px}.edit-note{min-height:2em;margin:13px 0!important;color:#c99f68!important}.mapping{padding-top:16px;border-top:1px solid var(--line);font-size:12px}.mapping h3{font-size:12px;font-weight:500;margin:0 0 8px;color:#ccb596}.mapping p{font-size:11px;margin:7px 0;line-height:1.8}.mapping b{font-weight:400;color:#d7b786}details{color:#ad9e88;font-size:11px;margin-top:16px}summary{cursor:pointer;min-height:30px}pre{white-space:pre-wrap;word-break:break-word;max-height:300px;overflow:auto;background:#1b1712;padding:10px;font:11px/1.7 monospace}footer{max-width:1180px;margin:0 auto;padding:20px 36px 35px;border-top:1px solid var(--line);color:#94816a;font-size:11px}.native .stage{min-height:660px}.native .mount{width:98.526px}.native .stage::after{content:"";position:absolute;width:192px;height:208px;left:50%;top:50%;transform:translate(-50%,-50%);border:1px dashed #7d6445;font-size:9px;color:#aa8d67;white-space:nowrap;text-align:center}.native .stage::before{content:"192 × 208 · 格子示意，非宿主实测";position:absolute;left:50%;top:calc(50% + 115px);transform:translateX(-50%);white-space:nowrap;font-size:10px;color:#aa8d67}.native .vertical-note{display:none}.background .stage{min-height:700px}.background main{max-width:1380px;grid-template-columns:minmax(0,1fr) 320px}.background .mount{width:330px}.background .stage::before{content:"任务开始时的制符画面";position:absolute;top:25px;font-size:11px;color:#b39a76;letter-spacing:4px}.overlay body,.overlay{background:transparent!important}.overlay header,.overlay .editor,.overlay .controls,.overlay footer,.overlay .vertical-note,.overlay .status-line{display:none}.overlay main{padding:0;display:block;width:360px;margin:0}.overlay .stage{min-height:0;width:360px;background:none}.overlay .mount{width:360px;filter:none}
+@media(max-width:850px){header{padding:23px 20px 18px;display:block}h1{font-size:34px}.subhead{margin-top:12px}main,.background main{padding:14px 20px 24px;grid-template-columns:minmax(0,1fr);gap:5px}.stage,.native .stage{min-height:580px}.mount{width:269px}.background .stage{min-height:620px}.background .mount{width:280px}.vertical-note{left:2%;font-size:14px}.editor{padding-top:10px}footer{padding:20px}.fields{grid-template-columns:1fr 1fr}.choices{gap:10px}.actions{gap:6px}button{padding:9px 10px}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<header><h1>召唤符</h1><div class="subhead">把本次调用写成一张符 · 本地交互样例，未接入 Codex</div></header>
+<main>
+<section aria-label="符纸与燃烧预览">
+<div class="stage"><div class="vertical-note">有所请 · 有所耗 · 有所应</div><div class="mount" id="mount"></div><div class="status-line" id="status" aria-live="polite">待起符</div></div>
+<div class="controls">
+<div class="actions"><button class="primary" id="start">开始示例任务</button><button id="wait" disabled>等待输入</button><button id="complete" disabled>任务完成</button><button id="cancel" disabled>取消</button></div>
+<div class="choices"><label>烧法 <select id="variant"><option value="auto">自动轮换</option><option value="bottom-up">自下而上</option><option value="top-down">自上而下</option><option value="spots">点状洞蚀</option><option value="whole">整张灼解</option></select></label><label>预览速度 <select id="speed"><option value="1">正常 · 30 秒一张</option><option value="5">5 倍 · 调试预览</option></select></label></div>
+<div class="choices"><button id="size" aria-pressed="false">看 Pet 格子大小</button><button id="background" aria-pressed="false">看制符场景</button><label><input type="checkbox" id="reduced">减少动态</label><button id="export">导出当前符面 SVG</button></div>
+<p class="footnote">30 秒是动画节拍；烧符不代表真实 token 数、费用或任务完成度。编辑字段后点击“开始新示例任务”，下一轮会把新内容写到符纸上。</p>
+</div></section>
+<aside class="editor"><h2>这一次，请什么？</h2><p>下面是可编辑的示例值，均未读取你的账户或任务。</p>
+<form id="metadata" autocomplete="off"><div class="fields">
+<label class="wide">所请模型<input name="model" value="GPT · 示例模型" maxlength="80"></label>
+<label>模型所属公司 · 法源章<input name="company" value="OpenAI" maxlength="50"></label><label>中转站 · 符头<input name="relay" value="官方直连" maxlength="50"></label>
+<label>执事框架 · 捆仙绳<input name="harness" value="Codex" maxlength="40"></label><label>推理强度 · 符胆<input name="reasoning" value="高" maxlength="40"></label>
+<label class="wide">工作环境<input name="environment" value="本地开发工作区" maxlength="64"></label>
+<label class="wide">所请事项 · 当前任务摘录<textarea name="task" maxlength="8192">修复登录报错，并验证会话续期</textarea></label>
+</div></form><p class="edit-note" id="edit-note">这些文字会写入符面。</p>
+<div class="mapping"><h3>沿用原图的写法</h3><p><b>符头／法源章</b>　从哪里请，由谁提供模型。</p><p><b>奉请／敕令</b>　请哪个模型，开始本次任务。</p><p><b>捆仙绳／天柱</b>　框架和工作环境，约束执行。</p><p><b>所请事项／符胆</b>　具体要做什么，投入多少推理强度。</p><p>符面使用毛笔字形逐组落字；这份样例没有任意汉字的真实逐笔书写数据。</p></div>
+<details><summary>查看本轮完整任务文本</summary><pre id="full-task"></pre></details>
+<details><summary>接入边界</summary><p>这里能验证语义符面与可控燃烧。原生 Pet 的动态内容、30 秒循环、任务信号和实际显示尺寸，需要在目标客户端验收。本文件不是可安装 Pet 图集。</p></details>
+</aside>
+</main>
+<footer>召唤符 v0.2 · 原创符式排版。参考图只用于理解结构，不把它直接用作运行时贴图。<details><summary>字体来源及开源许可</summary><p>Ma Shan Zheng / 马善政毛笔楷书，Google Fonts，原始字体嵌入；SIL Open Font License 1.1。</p><pre>{{FONT_LICENSE}}</pre></details></footer>
+<script>{{RITUAL_CORE}}</script>
+<script>{{TIMELINE}}</script>
+<script>{{BURN_VIEW}}</script>
+<script>
+(function(){
+'use strict';
+const $=id=>document.getElementById(id), form=$('metadata');
+let currentMeta, view, session=new RitualTimeline.Session(), count=0, speed=1, anchor=performance.now(), virtualBase=0, timer=null, lastStatus='';
+const now=()=>virtualBase+(performance.now()-anchor)*speed;
+function setSpeed(value){virtualBase=now();anchor=performance.now();speed=value;}
+function readForm(){const values=Object.fromEntries(new FormData(form));values.sources=Object.fromEntries(RitualCore.fields.map(k=>[k,'demo']));return RitualCore.normalizeMetadata(values);}
+function setPaper(meta){currentMeta=meta;view=new RitualBurn.BurnView($('mount'),meta);$('full-task').textContent=meta.fullTask;}
+function stopTimer(){if(timer!==null){cancelAnimationFrame(timer);clearTimeout(timer);timer=null;}}
+const names={'bottom-up':'自下而上','top-down':'自上而下',spots:'点状洞蚀',whole:'整张灼解'};
+const stateNames={idle:'待起符',working:'正在焚符',waiting:'等你接令 · 已暂停燃烧',completed:'已成待阅 · 示例完成',cancelled:'已收符 · 示例取消',error:'符火已熄 · 示例失败',unknown:'状态未取得 · 已暂停燃烧'};
+const phaseNames={writing:'写入本次调用',seal:'敕令已下',burning:'正在焚符',renewal:'化灰 · 下一张将至'};
+function render(){
+  stopTimer();
+  const frame=session.snapshot(now()), reduced=$('reduced').checked;
+  view.render(frame,reduced);
+  const text=frame.state==='working'?`${reduced?'静态显示':phaseNames[frame.phase]} · 第 ${frame.sheetNumber} 张 · ${names[frame.variant]} · ${(frame.activeMs/1000).toFixed(0)} 秒`:stateNames[frame.state];
+  if(text!==lastStatus){$('status').textContent=text;lastStatus=text;}
+  const running=frame.state==='working'||frame.state==='waiting';
+  $('wait').disabled=!running;$('complete').disabled=!running;$('cancel').disabled=!running;
+  $('wait').textContent=frame.state==='waiting'?'继续燃烧':'等待输入';
+  if(frame.state==='working'&&!document.hidden){timer=reduced?setTimeout(render,1000):requestAnimationFrame(render);}
+  return frame;
+}
+function start(){const metadata=readForm();setPaper(metadata);const runId='preview-'+(++count);session.dispatch({type:'start',runId,sessionId:'preview-session',metadata,source:'manual-preview'},now());$('start').textContent='开始新示例任务';$('edit-note').textContent='本轮已写入；再编辑会用于下一次起符。';render();}
+function event(type){session.dispatch({type,sessionId:'preview-session',runId:session.runId},now());render();}
+$('start').addEventListener('click',start);
+$('wait').addEventListener('click',()=>event(session.state==='waiting'?'working':'waiting'));
+$('complete').addEventListener('click',()=>event('completed'));
+$('cancel').addEventListener('click',()=>event('cancelled'));
+$('variant').addEventListener('change',()=>{session.options.variant=$('variant').value;render();});
+$('speed').addEventListener('change',()=>{setSpeed(Number($('speed').value));render();});
+$('reduced').checked=matchMedia('(prefers-reduced-motion: reduce)').matches;
+$('reduced').addEventListener('change',render);
+matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change',e=>{$('reduced').checked=e.matches;render();});
+$('size').addEventListener('click',()=>{const active=document.documentElement.classList.toggle('native');$('size').setAttribute('aria-pressed',active);if(active){document.documentElement.classList.remove('background');$('background').setAttribute('aria-pressed','false');}});
+$('background').addEventListener('click',()=>{const active=document.documentElement.classList.toggle('background');$('background').setAttribute('aria-pressed',active);if(active){document.documentElement.classList.remove('native');$('size').setAttribute('aria-pressed','false');}});
+form.addEventListener('submit',e=>{e.preventDefault();start();});
+form.addEventListener('input',()=>{if(session.runId){$('edit-note').textContent='已编辑；点击“开始新示例任务”后换上新符。';}else{setPaper(readForm());render();}});
+$('export').addEventListener('click',()=>{
+  const face=Array.from(document.styleSheets[0].cssRules).find(rule=>rule.cssText.startsWith('@font-face'));
+  const match=face&&face.cssText.match(/url\(["']?(data:[^"')]+)["']?\)/);
+  const svg=RitualCore.buildTalismanSVG(currentMeta,{fontDataURL:match?match[1]:''});
+  const license='<!-- '+{{LICENSE_JSON}}.replace(/--/g,'—')+' -->';
+  const url=URL.createObjectURL(new Blob([svg.replace('<svg',license+'\n<svg')],{type:'image/svg+xml'}));
+  const link=document.createElement('a');link.href=url;link.download='summoning-fu.svg';link.click();setTimeout(()=>URL.revokeObjectURL(url),1500);
+});
+document.addEventListener('visibilitychange',render);
+setPaper(readForm());
+if(new URLSearchParams(location.search).get('overlay')==='1'){document.documentElement.classList.add('overlay');}
+window.FuPreview={start,event,getState:()=>session.snapshot(now()),seek(ms){session.activeMs=Math.max(0,Number(ms)||0);session.lastTick=now();return render();},renderFrame(ms,variant){const frame={...RitualTimeline.frameAt(ms,{variant:variant||'bottom-up',seed:'visual-qa'}),state:'working'};view.render(frame,$('reduced').checked);return frame;},getMetadata:()=>currentMeta};
+document.fonts.ready.then(render);render();
+})();
+</script>
+</body></html>

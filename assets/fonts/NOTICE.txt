@@ -1,0 +1,26 @@
+Ma Shan Zheng — original font redistribution
+
+Copyright 2018 The Ma Shan Zheng Project Authors
+Upstream: https://github.com/googlefonts/mashanzheng
+Distribution source: https://github.com/google/fonts/tree/406197b91ff39a93061c2c2eeaee67ddf2ae1f0d/ofl/mashanzheng
+License: SIL Open Font License 1.1. The complete copyright notice and license are in OFL.txt.
+
+Bundled file: MaShanZheng-Regular.ttf
+Font family: Ma Shan Zheng
+Style: Regular, weight 400
+Internal version: Version 2.003
+The TTF is an unmodified copy of the source artifact. No glyphs were added, removed, or renamed.
+Its exact source URL, byte length, and SHA-256 are recorded in SOURCE.json.
+
+The font is bundled only as a component of the Summoning Fu project and its preview.
+It is not being sold as a standalone font. Keep OFL.txt and this notice when redistributing the component.
+If a standalone HTML preview embeds the font, preserve the full OFL license in that HTML too.
+No author endorsement is implied.
+
+Coverage: Google Fonts marks this family as chinese-simplified, latin, menu. Inspection found
+7,015 entries in the font's preferred Unicode cmap. This is not full Unicode coverage.
+Common Simplified Chinese project labels and the Latin strings OpenAI, GPT, and Codex were
+checked. Traditional characters such as 書 and 體 are absent and require a suitable fallback.
+
+Use this font for short talisman inscriptions. Use a standard UI font for long instructions,
+paths, URLs, diagnostics, and any fallback text. No system-wide font installation is required.

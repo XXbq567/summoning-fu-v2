@@ -1,0 +1,10 @@
+'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const { createHash } = require('node:crypto');
+const { parseCmap } = require('../renderer/font-coverage.js');
+const fontDir = path.resolve(__dirname, '../assets/fonts');
+const bytes = fs.readFileSync(path.join(fontDir, 'MaShanZheng-Regular.ttf'));
+const coverage = { ...parseCmap(bytes), source: 'MaShanZheng-Regular.ttf', sha256: createHash('sha256').update(bytes).digest('hex') };
+fs.writeFileSync(path.join(fontDir, 'coverage.json'), JSON.stringify(coverage, null, 2) + '\n');
+console.log(`Local font cmap: ${coverage.glyphCodePoints} Unicode code points, ${coverage.ranges.length} ranges`);

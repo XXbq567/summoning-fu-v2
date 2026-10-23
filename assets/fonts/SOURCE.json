@@ -1,0 +1,26 @@
+{
+  "project": "Ma Shan Zheng",
+  "source_repository": "https://github.com/google/fonts",
+  "commit": "406197b91ff39a93061c2c2eeaee67ddf2ae1f0d",
+  "committed": "2026-07-23T01:17:43Z",
+  "files": [
+    {
+      "name": "MaShanZheng-Regular.ttf",
+      "bytes": 5857936,
+      "sha256": "6d2546bb189c732a8ca29af9e22457b152387d158aa459e4ac2ce1e51788b7fb",
+      "url": "https://raw.githubusercontent.com/google/fonts/406197b91ff39a93061c2c2eeaee67ddf2ae1f0d/ofl/mashanzheng/MaShanZheng-Regular.ttf"
+    },
+    {
+      "name": "OFL.txt",
+      "bytes": 4397,
+      "sha256": "d7bdb1cee215b689e23c2f95672a6084c790542170648267a55114103d756a08",
+      "url": "https://raw.githubusercontent.com/google/fonts/406197b91ff39a93061c2c2eeaee67ddf2ae1f0d/ofl/mashanzheng/OFL.txt"
+    },
+    {
+      "name": "METADATA.pb",
+      "bytes": 844,
+      "sha256": "7e21912b6659b58694f0b999e69ad5a95da12fdc453565059727a2467e525f84",
+      "url": "https://raw.githubusercontent.com/google/fonts/406197b91ff39a93061c2c2eeaee67ddf2ae1f0d/ofl/mashanzheng/METADATA.pb"
+    }
+  ]
+}

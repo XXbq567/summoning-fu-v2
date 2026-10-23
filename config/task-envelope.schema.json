@@ -1,0 +1,470 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:summoning-fu:task-envelope:v1",
+  "title": "Summoning Fu Task Envelope v1",
+  "description": "适配器输出给召唤符运行层的任务快照，不是 Codex 原生 Pet manifest。renderer 必须在适配器核对 session/run 与事件次序后消费。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "runId",
+    "sessionId",
+    "source",
+    "state",
+    "metadata",
+    "provenance"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "description": "本轮任务身份，由适配器取得或派生；同一轮重复事件保持不变，不因每张纸符更新。"
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "description": "会话身份。默认只显示明确绑定的会话，不将不同会话状态与文字混用。"
+    },
+    "source": {
+      "enum": [
+        "demo",
+        "manual",
+        "codex-hook",
+        "codex-rollout",
+        "codex-app-server",
+        "native-pet",
+        "unknown"
+      ],
+      "description": "任务状态的输入来源；字段内容另见 provenance。native-pet 只能在真实宿主接口已验证后使用，不能凭文件名设定。 codex-rollout 是版本限定的本地只读日志适配，不是稳定公开接口。"
+    },
+    "state": {
+      "enum": [
+        "working",
+        "waiting",
+        "completed",
+        "error",
+        "cancelled",
+        "unknown"
+      ],
+      "description": "任务快照状态。completed 只用于可靠完成信号；Stop hook 单独不足以证明成功。"
+    },
+    "eventId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "description": "可选去重标识。没有宿主eventId时，适配器可产生自己的接收标识，但不能假称宿主原始ID。"
+    },
+    "observedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "适配器看到事件的UTC/带时区时间，不证明宿主事件先后，不用于动画单调计时。"
+    },
+    "sequence": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "可选的可信会话事件序号。未知用null或省略；不能用接收顺序冒充宿主发生顺序。"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "company",
+        "relay",
+        "harness",
+        "environment",
+        "task",
+        "reasoning"
+      ],
+      "properties": {
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 96,
+          "pattern": "\\S",
+          "description": "当次模型标识，或明确标注来源的手工/演示值；不据此推断模型公司。"
+        },
+        "company": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "\\S",
+          "description": "模型所属公司，与中转站区分；未核验时用 null。"
+        },
+        "relay": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "\\S",
+          "description": "中转站或官方直连的显示别名，不放认证信息或带凭据的 URL。"
+        },
+        "harness": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "\\S",
+          "description": "执行框架/客户端，如 Codex；未知则 null。"
+        },
+        "environment": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 96,
+          "pattern": "\\S",
+          "description": "项目/工作环境显示名，不要求提供完整本机路径。"
+        },
+        "task": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 240,
+          "pattern": "\\S",
+          "description": "用户指定的任务名或当次提示词的短摘录，不由额外模型调用生成。"
+        },
+        "reasoning": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "\\S",
+          "description": "当次已报告强度或标注 configured/manual/demo 的值；默认值不能冒充当次有效值。"
+        },
+        "fullTask": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 8192,
+          "description": "本地净化后的当前完整显示文本；超过8192字符明确省略。"
+        },
+        "fullTaskTruncated": {
+          "type": "boolean",
+          "description": "完整显示文本是否因安全长度上限截断。"
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "company",
+        "relay",
+        "harness",
+        "environment",
+        "task",
+        "reasoning"
+      ],
+      "properties": {
+        "model": {
+          "$ref": "#/$defs/provenance"
+        },
+        "company": {
+          "$ref": "#/$defs/provenance"
+        },
+        "relay": {
+          "$ref": "#/$defs/provenance"
+        },
+        "harness": {
+          "$ref": "#/$defs/provenance"
+        },
+        "environment": {
+          "$ref": "#/$defs/provenance"
+        },
+        "task": {
+          "$ref": "#/$defs/provenance"
+        },
+        "reasoning": {
+          "$ref": "#/$defs/provenance"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "provenance": {
+      "enum": [
+        "reported",
+        "configured",
+        "manual",
+        "demo",
+        "unknown"
+      ],
+      "description": "reported=当次宿主/可信适配器明确报告；configured=预设/配置值，并非已证明当次生效；manual=用户指定；demo=演示资料；unknown=未知且对应metadata必须为null。"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "provenance": {
+            "properties": {
+              "model": {
+                "const": "unknown"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "model": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "model": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "provenance": {
+            "properties": {
+              "company": {
+                "const": "unknown"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "company": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "company": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "provenance": {
+            "properties": {
+              "relay": {
+                "const": "unknown"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "relay": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "relay": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "provenance": {
+            "properties": {
+              "harness": {
+                "const": "unknown"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "harness": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "harness": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "provenance": {
+            "properties": {
+              "environment": {
+                "const": "unknown"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "environment": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "environment": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "provenance": {
+            "properties": {
+              "task": {
+                "const": "unknown"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "task": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "task": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "provenance": {
+            "properties": {
+              "reasoning": {
+                "const": "unknown"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "reasoning": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "reasoning": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

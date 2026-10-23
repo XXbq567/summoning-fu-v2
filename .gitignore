@@ -1,0 +1,9 @@
+node_modules/
+dist/
+docs/QA/
+reference/
+native-probe/
+.env
+.env.*
+config/display-aliases.json
+*.log

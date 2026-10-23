@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "runId": "demo-run-001",
+  "sessionId": "demo-session-001",
+  "source": "demo",
+  "state": "working",
+  "metadata": {
+    "model": "demo-model-01",
+    "company": "示例模型公司",
+    "relay": "云桥中转 · 演示",
+    "harness": "Codex · 演示",
+    "environment": "召唤符项目 · 演示",
+    "task": "把当前任务写成召唤符，并每30秒烧一张",
+    "reasoning": "high · 演示"
+  },
+  "provenance": {
+    "model": "demo",
+    "company": "demo",
+    "relay": "demo",
+    "harness": "demo",
+    "environment": "demo",
+    "task": "demo",
+    "reasoning": "demo"
+  }
+}

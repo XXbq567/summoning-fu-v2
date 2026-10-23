@@ -1,0 +1,12 @@
+{
+  "description": "Local visual handoff only. Discards prompt; silent and fail-open. Requires user hook trust.",
+  "hooks": {
+    "UserPromptSubmit": [{ "hooks": [{
+      "type": "command",
+      "command": "node -e \"try{require(require('node:path').join(process.env.PLUGIN_ROOT,'scripts','user-prompt-submit.cjs')).runStdin()}catch{process.exit(0)}\"",
+      "commandWindows": "node -e \"try{require(require('node:path').join(process.env.PLUGIN_ROOT,'scripts','user-prompt-submit.cjs')).runStdin()}catch{process.exit(0)}\"",
+      "timeout": 2,
+      "async": true
+    }] }]
+  }
+}
