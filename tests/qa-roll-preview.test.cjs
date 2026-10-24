@@ -10,7 +10,7 @@ const good=()=>Array.from({length:21},(_,i)=>{
   engine:'paperlab',libraryVersion:'0.8.1',materialReady:true,error:null,phase,canvasVisible:true,actualDrawCount:Math.min(i,17)+1,actualClearCount:0,metadataHash:'meta-a',textureHash:'texture-a',uvHash:'same-uv',uvInitialHash:'same-uv',meshId:'one-mesh',geometryId:'one-geometry',vertexCount:12000,
   rolledFraction:fraction,measuredWoundFraction:fraction,radius:.025+.15*fraction,topDriftDIP:0,rootPosition:[0,0,0],rootRotation:[0,0,0],rootScale:[1,1,1],backHasReadableInk:false,finiteNormals:true,geometryPositionHash:elapsed===0?'flat':('positions-'+elapsed),
   cameraPosition:[0,0,10],cameraQuaternion:[0,0,0,1],cameraProjectionHash:'fixed-camera',
-  material:{opacity:1,showThrough:0,backSource:'generated-blank-paper',depthTest:true,depthWrite:true,frontTextureId:'front',backTextureId:'back'},
+  material:{opacity:1,showThrough:0,backSource:'generated-paper-with-ink-difference',backsideInkStrength:.1,forceSinglePass:true,depthTest:true,depthWrite:true,frontTextureId:'front',backTextureId:'back'},
  }}};
 });
 test('roll QA requires the actual shared Paperlab geometry and stationary original UV/pose',()=>{
@@ -99,5 +99,12 @@ test('natural terminal counter equality requires actual finite nonnegative count
  for(const [scope,field]of [['state','rafCount'],['renderer','actualDrawCount'],['renderer','actualClearCount']])for(const invalid of [undefined,NaN,-1,1.5]){
   const rows=good();for(const row of rows)(scope==='state'?row.state:row.state.renderer)[field]=invalid;
   assert.equal(qa.analyseNatural(rows).result,'FAIL',scope+'.'+field);
+ }
+});
+test('natural rolling uses current single-pass paper back without claiming uniform-only visual acceptance',()=>{
+ assert.ok(qa,'the independent roll evidence validator must exist');
+ for(const alteration of [m=>delete m.forceSinglePass,m=>m.forceSinglePass=false,m=>delete m.backsideInkStrength,m=>m.backsideInkStrength=1]){
+  const rows=good();for(const row of rows)alteration(row.state.renderer.material);
+  assert.equal(qa.analyseNatural(rows).result,'FAIL');
  }
 });

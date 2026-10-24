@@ -38,7 +38,9 @@ function analyseNatural(rows,{speed=1,terminalMinMs=100}={}){
  if(samples.some(s=>s.p.meshId!==p0.meshId||s.p.geometryId!==p0.geometryId))return fail('mesh-changed');
  if(samples.some(s=>!finite(s.p.topDriftDIP)||s.p.topDriftDIP>.8))return fail('top-drift');
  if(samples.some(s=>poseKeys.some(k=>!same(s.p[k],p0[k]))||!same(s.p.rootScale,[1,1,1])||!same(s.p.rootRotation,[0,0,0])||(material(s.p).opacity??s.p.opacity)!==1))return fail('root-pose-changed');
- if(samples.some(s=>s.p.backHasReadableInk===true||(material(s.p).showThrough??s.p.showThrough)!==0||(material(s.p).backSource&&material(s.p).backSource!=='generated-blank-paper')))return fail('readable-back');
+ // Source admission is separate from the actual facing/contrast GPU inspection.
+ // These flags alone deliberately do not claim that the reverse is visually correct.
+ if(samples.some(s=>s.p.backHasReadableInk===true||(material(s.p).showThrough??s.p.showThrough)!==0||material(s.p).backSource!=='generated-paper-with-ink-difference'||material(s.p).forceSinglePass!==true||!finite(material(s.p).backsideInkStrength)||material(s.p).backsideInkStrength<0||material(s.p).backsideInkStrength>.2))return fail('readable-back');
  if(samples.some(s=>!Number.isSafeInteger(s.p.vertexCount)||s.p.vertexCount<1000||(material(s.p).depthTest??s.p.depthTest)!==true||(material(s.p).depthWrite??s.p.depthWrite)!==true||s.p.finiteNormals!==true||s.p.actualDrawCount<1||s.p.canvasVisible!==true))return fail('invalid-mesh');
  const roll=samples.filter(s=>s.e.phase==='rolling'),flat=samples.filter(s=>s.e.phase==='flat'),end=samples.filter(s=>s.e.phase==='rolled');
  if(roll.length<5||!flat.length||end.length<2)return fail('phase-not-observed');

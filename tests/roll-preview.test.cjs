@@ -28,7 +28,7 @@ test('roll clock keeps half speed through paused seeks and resumes without a jum
 });
 
 function fixture() {
-  let now = 0, callback, frames = 0;
+  let now = 0, callback = null, frames = 0;
   const views = [], ready = [];
   const makeView = config => {
     let resolve;
@@ -166,4 +166,36 @@ test('a failed first paint never restarts the clock or schedules a stale frame a
     assert.equal(scheduled, 0);
     assert.equal(disposed, true);
   }
+});
+
+test('material inspection accepts only fixed poses, strengths and diagnostic choices', () => {
+  const { validateCommand } = require('../desktop/roll-preview-main.cjs');
+  const request = { type: 'roll-preview:command', requestId: 'back1', action: 'material-inspect', pose: 'back', backsideInkStrength: .1, background: 'light' };
+  assert.deepEqual(validateCommand(request), { requestId: 'back1', action: 'material-inspect', pose: 'back', backsideInkStrength: .1, background: 'light', shader: 'art', legacyDoublePass: false, behind: 'none', clip: 'none', innerInk: 'original' });
+  for (const fields of [{ pose: 'arbitrary' }, { backsideInkStrength: '0.1' }, { backsideInkStrength: NaN }, { backsideInkStrength: .21 }, { backsideInkStrength: .15 }, { background: 'url(https://example.test)' }, { shader: 'custom' }, { legacyDoublePass: 1 }, { behind: 'image' }, { clip: 'custom' }, { innerInk: 'task' }, { path: 'C:/outside' }]) assert.equal(validateCommand({ ...request, ...fields }), null);
+  for (const strength of [0, .1, .2]) assert.equal(validateCommand({ ...request, backsideInkStrength: strength }).backsideInkStrength, strength);
+});
+
+test('static material inspection owns a frozen generation and cannot start the natural rolling clock', async () => {
+  const f = fixture();
+  const config = { metadata: { model: 'frozen-paper' }, textureMode: 'talisman', backsideInkStrength: .1, materialInspection: { pose: 'back', shader: 'art' } };
+  const started = f.controller.start(config);
+  config.materialInspection.pose = 'front'; config.backsideInkStrength = .2;
+  f.ready[0](); await started;
+  assert.equal(f.views[0].config.materialInspection.pose, 'back');
+  assert.equal(f.views[0].config.backsideInkStrength, .1);
+  assert.equal(f.controller.evidence().inspectionMode, true);
+  assert.equal(f.controller.evidence().playing, false);
+  assert.equal(f.controller.resume(), false);
+  assert.equal(f.pending(), null);
+  f.at(1000); f.controller.setSpeed(.5);
+  assert.equal(f.controller.evidence().playing, false);
+  assert.equal(f.pending(), null);
+  const normal = f.controller.start({ textureMode: 'talisman' }); f.ready[1](); await normal;
+  assert.equal(f.views[0].disposed, true);
+  assert.equal(f.views[1].config.materialInspection, null);
+  assert.equal(f.views[1].config.backsideInkStrength, .1);
+  assert.equal(f.views[1].frames[0].elapsedMs, 0);
+  assert.equal(f.controller.evidence().inspectionMode, false);
+  assert.equal(f.controller.evidence().playing, true);
 });

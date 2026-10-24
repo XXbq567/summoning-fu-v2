@@ -10,6 +10,8 @@ const changedNotice = `/*!
  * Project-owned Three.js bands, hinges and clipping implement folded delivery.
  * An isolated stage-one preview also reuses public PaperMesh/unroll for a
  * bottom-up roll at a fixed pose; it does not change the installed delivery.
+ * Transparent double-sided Paperlab sheets use a genuine single facing pass;
+ * the isolated roll view owns a bounded, linear-light paper-back ink texture.
  * This delivery runtime does not import Paperlab fire effects.
  * These are project integration changes; installed upstream files are unchanged.
  * Upstream copyright, license and NOTICE remain applicable and are distributed

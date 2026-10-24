@@ -27,3 +27,5 @@ GSAP 3.15.0 使用其自身标准许可，**不是 MIT**。保留发布包 READM
 
 React Three Fiber 9.7.0 的 npm 包未附完整 LICENSE；另保留同一官方 v9.7.0 标签的原始 MIT 许可（Copyright 2019-2025 Poimandres），来源与校验值记录在 SOURCE.json。原项目代码仍为 UNLICENSED；原始马善政字体未修改，SIL OFL 及字体版权声明继续随 assets/fonts 保留。第三方库的许可不改变本项目代码和字体各自的许可。
 
+2026-10-24 纸背适配：项目通过 Three.js 公共 `forceSinglePass` 保持 Paperlab 双面片元的真实正反面判定；独立卷纸预览使用本轮原纸材和有界线性墨差生成背面纹理，默认透墨强度 0.1，范围 0—0.2。原纸轮廓、深度读写和局部裁切保留。固定翻面、着色及遮挡探针仅属于本程序检查场景，不修改上游包文件，也不控制官方 Pet。
+

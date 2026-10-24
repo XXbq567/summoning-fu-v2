@@ -5,6 +5,7 @@ import { PaperMesh, getBehavior } from 'paperlab';
 import { gsap } from 'gsap';
 import sessionModule from './paperlab-session.js';
 import rollMotion from './roll-motion.js';
+import backface from './paper-backface.js';
 
 extend(THREE);
 const { createSession } = sessionModule;
@@ -42,18 +43,61 @@ function bandTexture(blank) {
   const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace; texture.anisotropy = 4;
   return texture;
 }
+function rgba(texture) {
+  const image = texture.image, ctx = image?.getContext?.('2d');
+  if (!ctx) throw fail('texture-failed');
+  return { width: image.width, height: image.height, pixels: ctx.getImageData(0, 0, image.width, image.height).data };
+}
+function pixelTexture(pixels, width, height) {
+  const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
+  const ctx = canvas.getContext('2d'); if (!ctx) throw fail('texture-failed');
+  const image = ctx.createImageData(width, height); image.data.set(pixels); ctx.putImageData(image, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace; texture.anisotropy = 4;
+  return texture;
+}
+function innerInkTexture(front, color) {
+  const { width, height, pixels } = rgba(front), changed = pixels.slice(), rgb = color === 'cyan' ? [0, 255, 255] : [255, 0, 255];
+  // Only the first 20% of paper wound into the core changes in this explicit
+  // static QA fixture. The outer printed area and every alpha remain intact.
+  for (let y = Math.ceil(height * .8); y < height; y++) for (let x = 0; x < width; x++) {
+    const offset = (y * width + x) * 4;
+    if (changed[offset + 3] !== 0) changed.set(rgb, offset);
+  }
+  return pixelTexture(changed, width, height);
+}
+function checkerTexture(color) {
+  const width = 64, height = 64, pixels = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const light = ((x >> 4) + (y >> 4)) % 2;
+    pixels.set(color === 'red' ? [light ? 255 : 180, light ? 28 : 0, light ? 48 : 12, 255] : [light ? 25 : 0, light ? 25 : 0, light ? 25 : 0, 255], (y * width + x) * 4);
+  }
+  return pixelTexture(pixels, width, height);
+}
 
-async function prepareRoll(container, metadata, textureMode, artwork) {
+async function prepareRoll(container, metadata, textureMode, artwork, backsideInkStrength, inspection) {
   const art = await artwork(metadata), extraTextures = [];
-  let front;
-  try { front = textureMode === 'bands' ? bandTexture(art.blank) : art.full; if (front !== art.full) extraTextures.push(front); }
-  catch (error) { art.blank.dispose(); art.full.dispose(); throw error; }
+  let front, back, backdropTexture;
+  try {
+    front = textureMode === 'bands' ? bandTexture(art.blank) : art.full;
+    if (front !== art.full) extraTextures.push(front);
+    if (inspection?.innerInk && inspection.innerInk !== 'original') { front = innerInkTexture(front, inspection.innerInk); extraTextures.push(front); }
+    const source = rgba(front), paper = rgba(art.blank);
+    if (source.width !== paper.width || source.height !== paper.height) throw fail('texture-failed');
+    const input = { width: source.width, height: source.height, front: source.pixels, blank: paper.pixels };
+    if (inspection?.shader === 'paper-reference') back = art.blank;
+    else {
+      const pixels = inspection?.shader === 'ink-reference' ? backface.createInkReferencePixels(input) : backface.createBackPixels(input, backsideInkStrength);
+      back = pixelTexture(pixels, source.width, source.height); extraTextures.push(back);
+    }
+    if (inspection?.behind !== undefined && inspection.behind !== 'none') { backdropTexture = checkerTexture(inspection.behind); extraTextures.push(backdropTexture); }
+  } catch (error) { for (const texture of [art.blank, art.full, ...extraTextures]) texture.dispose(); throw error; }
   const textures = [art.blank, art.full, ...extraTextures];
   // CPU artwork is decoded once, before readiness; evidence polling must not
   // rasterize/read pixels or consume the visible presentation's frame budget.
   const textureHash = front.image?.getContext
     ? hash(front.image.getContext('2d').getImageData(0, 0, front.image.width, front.image.height).data)
     : art.textureHash;
+  const backTextureHash = hash(rgba(back).pixels);
   let texturesDisposed = 0;
   for (const texture of textures) texture.addEventListener('dispose', () => { texturesDisposed++; });
   const canvas = document.createElement('canvas'); canvas.setAttribute('aria-hidden', 'true');
@@ -67,9 +111,20 @@ async function prepareRoll(container, metadata, textureMode, artwork) {
   container.append(canvas);
   let renderer, fiber, rootState, handle, material, mesh, dead = false, error = null, ready = false;
   let draws = 0, clears = 0, hasPixels = false, visible = false, lastKey = null, generation = null;
-  let geometryDisposals = 0, materialDisposals = 0, prewarmMs = 0;
+  let geometryDisposals = 0, materialDisposals = 0, prewarmMs = 0, shaderEvidence = {};
+  const compiledMaterialSides = new Set(), extraResources = [];
   let timeline = null, currentFrame = rollMotion.frameAt(0), meshState = {};
   const clock = { elapsedMs: 0 }, root = new THREE.Group(); root.name = 'roll-fixed-flat-origin';
+  if (inspection?.pose === 'back') root.rotation.y = Math.PI;
+  if (inspection?.pose === 'side') root.rotation.y = Math.PI / 2 - .035;
+  const inspectionElapsedMs = inspection?.pose === 'half' ? rollMotion.chapterElapsed('half')
+    : inspection?.pose === 'rolled' ? rollMotion.chapterElapsed('rolled') : 0;
+  let backdrop = null;
+  if (backdropTexture) {
+    const geometry = new THREE.PlaneGeometry(rollMotion.sheet.width * 1.3, rollMotion.sheet.height * 1.1);
+    const material = new THREE.MeshBasicMaterial({ map: backdropTexture, toneMapped: false });
+    backdrop = new THREE.Mesh(geometry, material); backdrop.position.z = -.65; extraResources.push(geometry, material);
+  }
   const topReference = new THREE.Vector3(), scratch = new THREE.Vector3();
   let topIndex = -1, uvInitialHash = null;
   const compiledBehavior = getBehavior('unroll');
@@ -83,6 +138,7 @@ async function prepareRoll(container, metadata, textureMode, artwork) {
     if (dead) return; dead = true; hidden(); ready = false;
     canvas.removeEventListener('webglcontextlost', lost);
     fiber?.unmount();
+    for (const resource of extraResources) resource.dispose();
     for (const texture of textures) texture.dispose();
     renderer?.dispose(); canvas.remove();
   }
@@ -115,8 +171,11 @@ async function prepareRoll(container, metadata, textureMode, artwork) {
       cameraPosition: rootState.camera.position.toArray(), cameraQuaternion: rootState.camera.quaternion.toArray(), cameraProjectionHash: hash(new Float32Array(rootState.camera.projectionMatrix.elements)),
       material: { side: material.side, depthWrite: material.depthWrite, depthTest: material.depthTest, alphaTest: material.alphaTest,
         opacity: material.uniforms.uOpacity?.value ?? material.opacity, showThrough: material.uniforms.uShowThrough?.value ?? null,
+        translucency: material.uniforms.uTranslucency?.value ?? null, forceSinglePass: material.forceSinglePass, backsideInkStrength,
         frontTextureId: material.uniforms.uFrontMap?.value?.uuid || null, backTextureId: material.uniforms.uBackMap?.value?.uuid || null,
-        backSource: material.uniforms.uBackMap?.value === art.blank ? 'generated-blank-paper' : 'unknown' },
+        backSource: material.uniforms.uBackMap?.value === back ? (inspection?.shader === 'ink-reference' ? 'inspection-full-ink-reference' : inspection?.shader === 'paper-reference' ? 'inspection-direct-paper-reference' : 'generated-paper-with-ink-difference') : 'unknown',
+        clippingPlanes: material.clippingPlanes?.map(plane => ({ normal: plane.normal.toArray(), constant: plane.constant })) || [],
+        ...shaderEvidence, compiledMaterialSides: [...compiledMaterialSides] },
     };
   }
   function getState() {
@@ -125,13 +184,15 @@ async function prepareRoll(container, metadata, textureMode, artwork) {
       ...currentFrame, ...(!visible ? { phase: 'hidden' } : {}),
       actualDrawCount: draws, actualClearCount: clears, prewarmMs, metadataHash: art.metadataHash,
       textureHash,
+      frontTextureHash: textureHash, backTextureHash, backsideInkStrength, materialAdapter: backface.adapter, inspection,
+      needsAnimation: inspection ? false : currentFrame.needsAnimation,
       textureMode, textureRasterizations: textures.length, viewport: { width, height, paperWidthDIP },
       ...meshState, resources: { ownedTextures: textures.length, disposedTextures: texturesDisposed, geometryDisposals, materialDisposals },
       error: dead ? 'disposed' : error };
   }
   try {
     renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: 'low-power', preserveDrawingBuffer: false });
-    renderer.setClearColor(0, 0); renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.NoToneMapping;
+    renderer.setClearColor(0, 0); renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.NoToneMapping; renderer.localClippingEnabled = true;
     renderer.debug.onShaderError = () => { error = 'render-failed'; };
     fiber = createRoot(canvas);
     await fiber.configure({ gl: renderer, flat: true, linear: false, frameloop: 'never', dpr: Math.min(2, globalThis.devicePixelRatio || 1),
@@ -143,6 +204,7 @@ async function prepareRoll(container, metadata, textureMode, artwork) {
     fiber.render(<>
       <ambientLight intensity={Math.PI * .64} />
       <directionalLight position={[-3, 3, 7]} intensity={Math.PI * .48} />
+      {backdrop ? <primitive object={backdrop} /> : null}
       <primitive object={root}>
         <PaperMesh ref={value => { handle = value; }} sheet={rollMotion.sheet} stock="printer"
           content={{ type: 'blank', back: { type: 'blank' } }} scene={{ turn: 0 }}
@@ -158,13 +220,38 @@ async function prepareRoll(container, metadata, textureMode, artwork) {
     material.addEventListener('dispose', () => { materialDisposals++; });
     const compile = material.onBeforeCompile.bind(material);
     material.onBeforeCompile = (shader, gl) => {
-      compile(shader, gl); shader.uniforms.ritualArtAlpha = { value: art.blank };
+      compile(shader, gl);
+      const compiledFacingBranch = shader.fragmentShader.includes('if (gl_FrontFacing)');
+      const compiledBackSampler = shader.fragmentShader.includes('texture2D(uBackMap, vec2(1.0 - vPaperUv.x, vPaperUv.y)).rgb');
+      if (!compiledFacingBranch || !compiledBackSampler || !shader.uniforms.uFrontMap || !shader.uniforms.uBackMap) throw fail('render-failed');
+      if (inspection?.shader === 'paper-reference') {
+        // Independent baseline: raw original paper, bypassing the back-image
+        // compositor entirely. Sample physical UV directly to match the net
+        // preflip + Paperlab flip in production's zero-strength back map.
+        shader.fragmentShader = shader.fragmentShader.replace('texture2D(uBackMap, vec2(1.0 - vPaperUv.x, vPaperUv.y)).rgb', 'texture2D(uBackMap, vPaperUv).rgb');
+      }
+      shader.uniforms.ritualArtAlpha = { value: art.blank };
       shader.fragmentShader = 'uniform sampler2D ritualArtAlpha;\n' + shader.fragmentShader.replace('#include <alphatest_fragment>',
         'diffuseColor.a *= texture2D(ritualArtAlpha, vPaperUv).a;\n#include <alphatest_fragment>');
+      if (inspection?.shader === 'facing' || inspection?.shader === 'uv') {
+        const anchor = '#include <colorspace_fragment>';
+        if (!shader.fragmentShader.includes(anchor)) throw fail('render-failed');
+        const color = inspection.shader === 'facing' ? '(gl_FrontFacing ? vec3(1.0,0.0,0.0) : vec3(0.0,1.0,0.0))' : 'vec3(vPaperUv, gl_FrontFacing ? 1.0 : 0.0)';
+        // Diagnostic values are final normalized display bytes, NOT sRGB-
+        // encoded UVs. Original alpha and clipping have already run unchanged.
+        shader.fragmentShader = shader.fragmentShader.replace(anchor, anchor + '\ngl_FragColor.rgb = ' + color + ';');
+      }
+      compiledMaterialSides.add(material.side);
+      shaderEvidence = { compiledFacingBranch, compiledBackSampler, compiledBackSamplerMode: inspection?.shader === 'paper-reference' ? 'physical-uv-paper-reference' : 'paperlab-back-flip-compensated', compiledShaderHash: hash(shader.fragmentShader),
+        compiledFrontTextureId: shader.uniforms.uFrontMap.value?.uuid || null, compiledBackTextureId: shader.uniforms.uBackMap.value?.uuid || null };
     };
-    material.customProgramCacheKey = () => 'ritual-roll-original-alpha-v1';
+    material.customProgramCacheKey = () => 'ritual-roll-backface-v1-' + (inspection?.shader || 'art');
     material.transparent = true; material.alphaTest = .01; material.depthWrite = true; material.depthTest = true; material.needsUpdate = true;
-    material.uniforms.uFrontMap.value = front; material.uniforms.uBackMap.value = art.blank; material.uniforms.uOpacity.value = 1;
+    backface.configureFacing(material, { legacyDoublePass: inspection?.legacyDoublePass || false });
+    if (!material.uniforms.uShowThrough || !material.uniforms.uTranslucency) throw fail('render-failed');
+    material.uniforms.uFrontMap.value = front; material.uniforms.uBackMap.value = back; material.uniforms.uOpacity.value = 1;
+    material.uniforms.uShowThrough.value = 0; material.uniforms.uTranslucency.value = 0;
+    if (inspection?.clip === 'lower-half') material.clippingPlanes = [new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)];
     const uv = mesh.geometry.attributes.uv;
     uvInitialHash = hash(uv.array);
     let distance = Infinity;
@@ -186,7 +273,7 @@ async function prepareRoll(container, metadata, textureMode, artwork) {
       if (dead || error || !ready) { hidden(); return; }
       generation = frame.generation;
       if (frame.visible !== true) { hidden(); return; }
-      const sample = rollMotion.frameAt(frame.elapsedMs), key = `${generation}:${sample.elapsedMs}`;
+      const sample = rollMotion.frameAt(inspection ? inspectionElapsedMs : frame.elapsedMs), key = `${generation}:${sample.elapsedMs}`;
       if (key === lastKey && visible) return;
       if (!timeline) {
         clock.elapsedMs = 0;
@@ -206,10 +293,12 @@ async function prepareRoll(container, metadata, textureMode, artwork) {
 
 export function createRollPreviewView(container, options, artwork) {
   const textureMode = options.textureMode === 'talisman' ? 'talisman' : 'bands';
+  const backsideInkStrength = backface.normalizeStrength(options.backsideInkStrength);
+  const inspection = backface.normalizeInspection(options.materialInspection);
   const metadata = JSON.parse(JSON.stringify(options.metadata || {}));
   let engine = null;
   const session = rollMotion.createPreviewSession(async () => {
-    engine = await prepareRoll(container, metadata, textureMode, artwork); return engine;
+    engine = await prepareRoll(container, metadata, textureMode, artwork, backsideInkStrength, inspection); return engine;
   }, createSession, { mode: 'roll-inspection', textureMode });
   return { ready: session.ready, render: session.render, dispose: session.dispose,
     getState() {

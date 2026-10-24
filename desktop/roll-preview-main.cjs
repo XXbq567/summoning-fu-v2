@@ -4,12 +4,18 @@ const path = require('node:path');
 const fs = require('node:fs');
 const crypto = require('node:crypto');
 const { fileURLToPath } = require('node:url');
+const { materialCommand } = require('./roll-preview.js');
 const root = path.resolve(__dirname, '..');
-const actions = new Set(['replay', 'pause', 'resume', 'stop', 'speed-1', 'speed-0.5', 'texture-bands', 'texture-talisman', 'flat', 'start', 'half', 'closing', 'rolled', 'fixture-a', 'fixture-b', 'seek', 'capture', 'hide', 'show', 'quit']);
+const actions = new Set(['replay', 'pause', 'resume', 'stop', 'speed-1', 'speed-0.5', 'texture-bands', 'texture-talisman', 'flat', 'start', 'half', 'closing', 'rolled', 'fixture-a', 'fixture-b', 'seek', 'capture', 'hide', 'show', 'quit', 'material-inspect', 'material-natural']);
 function validateCommand(value) {
   if (!value || value.type !== 'roll-preview:command' || !actions.has(value.action)) return null;
   const requestId = typeof value.requestId === 'string' && /^[a-zA-Z0-9_-]{1,80}$/.test(value.requestId) ? value.requestId : null;
   if (!requestId) return null;
+  if (value.action === 'material-inspect') {
+    const { type, requestId: _requestId, ...fields } = value;
+    const command = materialCommand(fields); return command ? { requestId, ...command } : null;
+  }
+  if (value.action === 'material-natural' && Object.keys(value).some(key => !['type', 'requestId', 'action'].includes(key))) return null;
   if (value.action === 'seek' && (!Number.isFinite(value.elapsedMs) || value.elapsedMs < 0 || value.elapsedMs > 850)) return null;
   return { requestId, action: value.action, ...(value.action === 'seek' ? { elapsedMs: value.elapsedMs } : {}) };
 }
@@ -79,16 +85,20 @@ async function start(args = process.argv.slice(2)) {
     const name = String(++captureId).padStart(3, '0') + '-' + (evidence?.textureMode || 'unknown') + '-' + (evidence?.phase || 'unknown');
     const file = path.join(output, 'captures', name + '.png');
     const image = await win.webContents.capturePage(); fs.writeFileSync(file, image.toPNG(), { mode: 0o600 });
-    let canvasFile = null, nonZeroAlphaPixels = null, canvasPixels = 0;
+    let canvasFile = null, nonZeroAlphaPixels = null, canvasPixels = 0, bitmapFile = null, width = 0, height = 0;
     const g = evidence?.geometry;
     if (g && [g.x, g.y, g.width, g.height].every(Number.isFinite) && g.width > 0 && g.height > 0) {
       // The stage has a painted background. Window capture alpha cannot establish
       // whether a transparent GPU canvas itself was cleared; report that limit.
       const area = { x: Math.max(0, Math.floor(g.x)), y: Math.max(0, Math.floor(g.y)), width: Math.ceil(g.width), height: Math.ceil(g.height) };
       const canvas = await win.webContents.capturePage(area); canvasFile = path.join(output, 'captures', name + '-stage.png');
-      fs.writeFileSync(canvasFile, canvas.toPNG(), { mode: 0o600 }); canvasPixels = canvas.getSize().width * canvas.getSize().height;
+      fs.writeFileSync(canvasFile, canvas.toPNG(), { mode: 0o600 });
+      ({ width, height } = canvas.getSize()); canvasPixels = width * height;
+      const bitmap = canvas.toBitmap();
+      if (bitmap.length !== canvasPixels * 4 || bitmap.length > 32 * 1024 * 1024) throw Error('stage-bitmap-size-mismatch');
+      bitmapFile = path.join(output, 'captures', name + '-stage.bgra'); fs.writeFileSync(bitmapFile, bitmap, { mode: 0o600 });
     }
-    return { file, canvasFile, nonZeroAlphaPixels, canvasPixels, alphaClassification: 'PAINTED_STAGE_CAPTURE_NOT_GPU_ALPHA_PROOF' };
+    return { file, canvasFile, bitmapFile, width, height, channelOrder: 'BGRA', nonZeroAlphaPixels, canvasPixels, alphaClassification: 'PAINTED_STAGE_CAPTURE_NOT_GPU_ALPHA_PROOF' };
   }
   process.on('message', async raw => {
     if (!qaOnly || win.isDestroyed()) return;
@@ -99,7 +109,7 @@ async function start(args = process.argv.slice(2)) {
       else if (command.action === 'hide') win.hide();
       else if (command.action === 'show') win.showInactive();
       else if (command.action === 'quit') { send({ type: 'roll-preview:ack', requestId: command.requestId, ok: true }); app.quit(); return; }
-      else win.webContents.send('roll-preview:command', { action: command.action, ...(command.action === 'seek' ? { elapsedMs: command.elapsedMs } : {}) });
+      else { const { requestId: _requestId, ...payload } = command; win.webContents.send('roll-preview:command', payload); }
       send({ type: 'roll-preview:ack', requestId: command.requestId, ok: true, ...extra }); publish();
     } catch { send({ type: 'roll-preview:ack', requestId: command.requestId, ok: false, error: 'fixed-preview-command-failed' }); }
   });

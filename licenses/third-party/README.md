@@ -11,7 +11,7 @@ Scope is taken from positive bytesInOutput in the final esbuild output, not mere
 | @esbuild/win32-x64 | 0.25.12 | MIT | build-only | 0 | original-terms-preserved |
 | @mediapipe/tasks-vision | 0.10.17 | Apache-2.0 | installed-not-emitted | 0 | MISSING_TERMS_REVIEW_REQUIRED |
 | @monogrid/gainmap-js | 3.7.2 | MIT | installed-not-emitted | 0 | original-terms-preserved |
-| @react-three/fiber | 9.7.0 | MIT | emitted-browser-bundle | 153486 | original-terms-preserved |
+| @react-three/fiber | 9.7.0 | MIT | emitted-browser-bundle | 153514 | original-terms-preserved |
 | @tweenjs/tween.js | 23.1.3 | MIT | installed-not-emitted | 0 | original-terms-preserved |
 | @types/draco3d | 1.4.10 | MIT | installed-not-emitted | 0 | original-terms-preserved |
 | @types/offscreencanvas | 2019.7.3 | MIT | installed-not-emitted | 0 | original-terms-preserved |
@@ -34,7 +34,7 @@ Scope is taken from positive bytesInOutput in the final esbuild output, not mere
 | esbuild | 0.25.12 | MIT | build-only | 0 | original-terms-preserved |
 | fflate | 0.8.3 | MIT | installed-not-emitted | 0 | original-terms-preserved |
 | glsl-noise | 0.0.0 | MIT | installed-not-emitted | 0 | original-terms-preserved |
-| gsap | 3.15.0 | Standard 'no charge' license: https://gsap.com/standard-license. | emitted-browser-bundle | 70712 | published-notice-preserved-custom-terms-linked |
+| gsap | 3.15.0 | Standard 'no charge' license: https://gsap.com/standard-license. | emitted-browser-bundle | 70718 | published-notice-preserved-custom-terms-linked |
 | hls.js | 1.7.3 | Apache-2.0 | installed-not-emitted | 0 | original-terms-preserved |
 | ieee754 | 1.2.1 | BSD-3-Clause | installed-not-emitted | 0 | original-terms-preserved |
 | immediate | 3.0.6 | MIT | installed-not-emitted | 0 | original-terms-preserved |
@@ -45,8 +45,8 @@ Scope is taken from positive bytesInOutput in the final esbuild output, not mere
 | maath | 0.10.8 | MIT | installed-not-emitted | 0 | MISSING_TERMS_REVIEW_REQUIRED |
 | meshline | 3.3.1 | MIT | installed-not-emitted | 0 | original-terms-preserved |
 | meshoptimizer | 1.1.1 | MIT | installed-not-emitted | 0 | original-terms-preserved |
-| paperlab | 0.8.1 | Apache-2.0 | emitted-browser-bundle | 194899 | original-terms-preserved |
-| @react-three/drei | 10.7.9 | MIT | emitted-browser-bundle | 1940 | original-terms-preserved |
+| paperlab | 0.8.1 | Apache-2.0 | emitted-browser-bundle | 194853 | original-terms-preserved |
+| @react-three/drei | 10.7.9 | MIT | emitted-browser-bundle | 1947 | original-terms-preserved |
 | path-key | 3.1.1 | MIT | installed-not-emitted | 0 | original-terms-preserved |
 | potpack | 1.0.2 | ISC | installed-not-emitted | 0 | original-terms-preserved |
 | promise-worker-transferable | 1.0.4 | Apache-2.0 | installed-not-emitted | 0 | original-terms-preserved |
@@ -61,7 +61,7 @@ Scope is taken from positive bytesInOutput in the final esbuild output, not mere
 | three | 0.170.0 | MIT | installed-not-emitted | 0 | original-terms-preserved |
 | stats.js | 0.17.0 | MIT | installed-not-emitted | 0 | original-terms-preserved |
 | suspend-react | 0.1.3 | MIT | emitted-browser-bundle | 1032 | original-terms-preserved |
-| three | 0.186.0 | MIT | emitted-browser-bundle | 743829 | original-terms-preserved |
+| three | 0.186.0 | MIT | emitted-browser-bundle | 743855 | original-terms-preserved |
 | three-custom-shader-material | 6.4.0 | MIT | emitted-browser-bundle | 14616 | original-terms-preserved |
 | three-mesh-bvh | 0.8.3 | MIT | installed-not-emitted | 0 | original-terms-preserved |
 | three-stdlib | 2.36.1 | MIT | emitted-browser-bundle | 2152 | original-terms-preserved |
@@ -76,5 +76,5 @@ Scope is taken from positive bytesInOutput in the final esbuild output, not mere
 | webgl-constants | 1.1.1 | UNDECLARED | installed-not-emitted | 0 | original-license-file-preserved-metadata-omitted |
 | webgl-sdf-generator | 1.1.1 | MIT | installed-not-emitted | 0 | original-terms-preserved |
 | which | 2.0.2 | ISC | installed-not-emitted | 0 | original-terms-preserved |
-| zod | 4.6.7 | MIT | emitted-browser-bundle | 455354 | original-terms-preserved |
+| zod | 4.6.7 | MIT | emitted-browser-bundle | 455368 | original-terms-preserved |
 | zustand | 5.0.16 | MIT | emitted-browser-bundle | 751 | original-terms-preserved |

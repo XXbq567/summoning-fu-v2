@@ -8,12 +8,13 @@
 <link rel="stylesheet" href="roll-preview.css">
 </head>
 <body>
-<header><div><p class="eyebrow">召唤符 / 第一阶段</p><h1>从纸底，慢慢卷起。</h1></div><p class="scope">固定镜头 · 只看卷纸<br>不旋转，不飞行，不淡出</p></header>
+<header><div><p class="eyebrow">召唤符 / 第一阶段</p><h1>从纸底，慢慢卷起。</h1></div><p class="scope">卷纸与纸背分别检查<br>检查视角不参与退场动效</p></header>
 <div class="layout">
 <section class="stage" aria-label="固定位置卷纸预览"><div id="roll-paper"></div><span class="stage-label">BOTTOM 先入内层，TOP 最后收拢</span></section>
 <aside>
 <div class="state-row"><span class="status-dot"></span><p id="roll-state" role="status">正在准备本地纸张…</p></div>
 <p class="hint">先看六条色带与竖线是否连续弯曲，再切换真实符面。卷好后留在原位。</p>
+<div class="material-modes" aria-label="检查模式"><button id="material-natural" aria-pressed="true" disabled>正常卷纸</button><button id="material-check" aria-pressed="false" disabled>纸背检查</button></div>
 <label for="roll-texture">纸面内容</label><select id="roll-texture" disabled><option value="bands">六色测试纸 · TOP → BOTTOM</option><option value="talisman">本轮生成的召唤符 · 本地示例</option></select>
 <div class="buttons"><button id="roll-replay" class="primary" disabled>重新播放</button><button id="roll-pause" disabled>暂停</button><button id="roll-stop" disabled>清空</button></div>
 <div class="timeline-label"><label for="roll-progress">拖动检查卷曲</label><output id="roll-time">0 / 850 ms</output></div>
@@ -21,6 +22,12 @@
 <label for="roll-speed">播放速度</label><select id="roll-speed" disabled><option value="1">自然速度</option><option value="0.5">半速 · 看清纸层</option></select>
 <h2>停下来检查</h2>
 <div class="chapters"><button data-chapter="flat" disabled><span>00</span>完整平纸</button><button data-chapter="start" disabled><span>01</span>底边起卷</button><button data-chapter="half" disabled><span>02</span>卷入一半</button><button data-chapter="closing" disabled><span>03</span>顶部收拢</button><button data-chapter="rolled" disabled><span>04</span>完全卷好</button></div>
+<section class="paper-inspection" aria-labelledby="paper-inspection-title">
+<h2 id="paper-inspection-title">纸背与纸层 · 静止检查</h2>
+<p>每次切换生成一张新的固定检查纸，不把翻面加入卷纸时间线。</p>
+<div class="inspection-poses"><button data-inspection-pose="front" aria-pressed="false" disabled>正面</button><button data-inspection-pose="back" aria-pressed="false" disabled>背面</button><button data-inspection-pose="side" aria-pressed="false" disabled>侧面</button><button data-inspection-pose="half" aria-pressed="false" disabled>半卷</button><button data-inspection-pose="rolled" aria-pressed="false" disabled>全卷</button></div>
+<div class="inspection-settings"><div><label for="back-ink-strength">背面透墨强度</label><select id="back-ink-strength" disabled><option value="0">0 · 素纸</option><option value="0.1" selected>0.1 · 默认淡墨</option><option value="0.2">0.2 · 对照</option></select></div><div><label for="paper-background">检查背景</label><select id="paper-background" disabled><option value="dark">暗底</option><option value="light">亮底</option></select></div></div>
+</section>
 <p class="boundary">本页只验证卷纸。没有真实 Pet 联动，也不会发送聊天或改变任务状态。最小化、隐藏或改变窗口大小会清空本轮；点击重播重新开始。</p>
 </aside>
 </div>

@@ -8,6 +8,7 @@ import sessionModule from './paperlab-session.js';
 import deliveryModule from './delivery-motion.js';
 import foldedModule from './folded-paper.js';
 import { createRollPreviewView, rollMotion } from './roll-preview-engine.jsx';
+import backfaceModule from './paper-backface.js';
 
 extend(THREE);
 const { createSession } = sessionModule;
@@ -106,7 +107,7 @@ async function prepare(container, metadata) {
       <directionalLight position={[-2, 3, 6]} intensity={Math.PI * .16} />
       <primitive object={group}>
         <PaperMesh ref={value => { handle = value; }} sheet={{ width: 1, height: 710 / 264, thickness: .001, segments: 'auto', cornerRadius: 0 }}
-          stock="printer" content={{ type: 'blank' }} surface={{ grain: 0, aging: 0, showThrough: 0, translucency: 0 }} memory={{ set: 0, creases: [] }}
+          stock="printer" content={{ type: 'blank', back: { type: 'blank' } }} surface={{ grain: 0, aging: 0, showThrough: 0, translucency: 0 }} memory={{ set: 0, creases: [] }}
           behavior={{ type: 'unroll', progress: 1, tightness: .04, core: .035, sway: 0, from: 'bottom', tail: 0 }}
           physics="none" autoplay={false} reducedMotion={false} interactive={false} stateTriggers={false} />
       </primitive>
@@ -114,9 +115,9 @@ async function prepare(container, metadata) {
       <AlignMaterial /><Ready />
     </>);
     await timeout(committed, 5000, 'webgl-unavailable');
-    for (let i = 0; i < 100 && !handle?.mesh?.material?.uniforms?.uFrontMap; i++) await new Promise(resolve => setTimeout(resolve, 10));
+    for (let i = 0; i < 100 && (!handle?.mesh?.material?.uniforms?.uFrontMap?.value || !handle?.mesh?.material?.uniforms?.uBackMap?.value); i++) await new Promise(resolve => setTimeout(resolve, 10));
     const material = handle?.mesh?.material;
-    if (!material?.uniforms?.uFrontMap || !rootState) throw fail('webgl-unavailable');
+    if (!material?.uniforms?.uFrontMap || !material?.uniforms?.uBackMap || !rootState) throw fail('webgl-unavailable');
     const compile = material.onBeforeCompile.bind(material);
     material.onBeforeCompile = (shader, gl) => {
       compile(shader, gl); shader.uniforms.ritualArtAlpha = { value: art.blank };
@@ -125,7 +126,10 @@ async function prepare(container, metadata) {
     };
     material.customProgramCacheKey = () => 'ritual-paperlab-original-alpha-v1';
     material.transparent = true; material.alphaTest = .01; material.needsUpdate = true;
-    material.uniforms.uFrontMap.value = art.blank;
+    backfaceModule.configureFacing(material);
+    // Before writing both faces are blank: no future text leaks through the
+    // already approved extraction. The separate folded delivery is untouched.
+    material.uniforms.uFrontMap.value = art.blank; material.uniforms.uBackMap.value = art.blank;
     handle.set('progress', 1); rootState.advance(0, false); draws++; hasPixels = true;
     if (error) throw fail(error);
     const warmingAt = performance.now();

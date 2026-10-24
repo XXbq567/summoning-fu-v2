@@ -94,7 +94,7 @@ function writeNotices(root) {
     for (const file of row.files) {const source=path.resolve(root,file.sourceRelativePath),output=path.join(target,file.relativePath);if(source!==output)fs.copyFileSync(source,output);}
   }
   const inventory = { kind: 'installed-package-original-notices-with-emitted-bundle-scope', generatedAt: new Date().toISOString(), bundle,
-    localAdaptationNotice:'Project runtime preserves original art alpha on the Paperlab sheet and uses project-owned Three.js bands, hinges and clipping for folded delivery. This delivery runtime does not import Paperlab fire effects. Original installed package and retained LICENSE/NOTICE remain unchanged. See THIRD-PARTY-NOTICES.md.',
+    localAdaptationNotice:'Project runtime preserves original art alpha and uses project-owned Three.js bands, hinges and clipping for folded delivery. Transparent DoubleSide Paperlab sheets use the public forceSinglePass option; the isolated roll preview generates a bounded linear-light ink-difference back texture. Diagnostic poses and probes belong only to this program. This delivery runtime does not import Paperlab fire effects. Original installed package and retained LICENSE/NOTICE remain unchanged. See THIRD-PARTY-NOTICES.md.',
     sourceArchive: { name: 'paperlab', version: '0.8.1', registry: 'https://registry.npmjs.org/paperlab/-/paperlab-0.8.1.tgz', integrity: archive.integrity },
     packages: rows.map(({ files, ...row }) => ({ ...row, files: files.map(({ content, ...file }) => file) })) };
   fs.writeFileSync(path.join(destination, 'SOURCE.json'), JSON.stringify(inventory, null, 2) + '\n');
