@@ -76,5 +76,5 @@ Scope is taken from positive bytesInOutput in the final esbuild output, not mere
 | webgl-constants | 1.1.1 | UNDECLARED | installed-not-emitted | 0 | original-license-file-preserved-metadata-omitted |
 | webgl-sdf-generator | 1.1.1 | MIT | installed-not-emitted | 0 | original-terms-preserved |
 | which | 2.0.2 | ISC | installed-not-emitted | 0 | original-terms-preserved |
-| zod | 4.6.7 | MIT | emitted-browser-bundle | 455332 | original-terms-preserved |
+| zod | 4.6.7 | MIT | emitted-browser-bundle | 455354 | original-terms-preserved |
 | zustand | 5.0.16 | MIT | emitted-browser-bundle | 751 | original-terms-preserved |

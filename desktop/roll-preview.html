@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self' data:; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>召唤符 · 卷纸检查</title>
+<link rel="stylesheet" href="roll-preview.css">
+</head>
+<body>
+<header><div><p class="eyebrow">召唤符 / 第一阶段</p><h1>从纸底，慢慢卷起。</h1></div><p class="scope">固定镜头 · 只看卷纸<br>不旋转，不飞行，不淡出</p></header>
+<div class="layout">
+<section class="stage" aria-label="固定位置卷纸预览"><div id="roll-paper"></div><span class="stage-label">BOTTOM 先入内层，TOP 最后收拢</span></section>
+<aside>
+<div class="state-row"><span class="status-dot"></span><p id="roll-state" role="status">正在准备本地纸张…</p></div>
+<p class="hint">先看六条色带与竖线是否连续弯曲，再切换真实符面。卷好后留在原位。</p>
+<label for="roll-texture">纸面内容</label><select id="roll-texture" disabled><option value="bands">六色测试纸 · TOP → BOTTOM</option><option value="talisman">本轮生成的召唤符 · 本地示例</option></select>
+<div class="buttons"><button id="roll-replay" class="primary" disabled>重新播放</button><button id="roll-pause" disabled>暂停</button><button id="roll-stop" disabled>清空</button></div>
+<div class="timeline-label"><label for="roll-progress">拖动检查卷曲</label><output id="roll-time">0 / 850 ms</output></div>
+<input id="roll-progress" aria-label="卷纸进度" type="range" min="0" max="850" step="1" value="0" disabled>
+<label for="roll-speed">播放速度</label><select id="roll-speed" disabled><option value="1">自然速度</option><option value="0.5">半速 · 看清纸层</option></select>
+<h2>停下来检查</h2>
+<div class="chapters"><button data-chapter="flat" disabled><span>00</span>完整平纸</button><button data-chapter="start" disabled><span>01</span>底边起卷</button><button data-chapter="half" disabled><span>02</span>卷入一半</button><button data-chapter="closing" disabled><span>03</span>顶部收拢</button><button data-chapter="rolled" disabled><span>04</span>完全卷好</button></div>
+<p class="boundary">本页只验证卷纸。没有真实 Pet 联动，也不会发送聊天或改变任务状态。最小化、隐藏或改变窗口大小会清空本轮；点击重播重新开始。</p>
+</aside>
+</div>
+<script src="../renderer/ritual-core.js"></script>
+<script src="../renderer/font-coverage.js"></script>
+<script src="../renderer/generated/paperlab-runtime.js"></script>
+<script src="roll-preview.js"></script>
+</body>
+</html>

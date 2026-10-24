@@ -8,6 +8,8 @@ const changedNotice = `/*!
  * This generated bundle includes Paperlab 0.8.1 (Apache-2.0).
  * Runtime adaptation preserves the original art alpha on the Paperlab sheet.
  * Project-owned Three.js bands, hinges and clipping implement folded delivery.
+ * An isolated stage-one preview also reuses public PaperMesh/unroll for a
+ * bottom-up roll at a fixed pose; it does not change the installed delivery.
  * This delivery runtime does not import Paperlab fire effects.
  * These are project integration changes; installed upstream files are unchanged.
  * Upstream copyright, license and NOTICE remain applicable and are distributed

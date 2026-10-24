@@ -7,6 +7,7 @@ import fontDataURL from '../assets/fonts/MaShanZheng-Regular.ttf';
 import sessionModule from './paperlab-session.js';
 import deliveryModule from './delivery-motion.js';
 import foldedModule from './folded-paper.js';
+import { createRollPreviewView, rollMotion } from './roll-preview-engine.jsx';
 
 extend(THREE);
 const { createSession } = sessionModule;
@@ -204,4 +205,4 @@ async function prepare(container, metadata) {
 
 globalThis.RitualPaperlab = Object.freeze({ version: '0.8.1', createView(container, options = {}) {
   return createSession(() => prepare(container, options.metadata || {}));
-} });
+}, createRollPreviewView(container, options = {}) { return createRollPreviewView(container, options, artwork); }, rollMotion, RollMotion: rollMotion });
