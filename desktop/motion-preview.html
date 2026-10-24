@@ -8,10 +8,11 @@
 <link rel="stylesheet" href="window.css">
 </head>
 <body class="motion-preview">
-<header><span class="eyebrow">召唤符 · 本机独立预览</span><h1>取纸，落墨，燃尽。</h1><p id="preview-policy" class="muted"></p></header>
+<header><span class="eyebrow">召唤符 · 本机独立预览</span><h1>取纸，落墨，折起送达。</h1><p id="preview-policy" class="muted"></p></header>
 <div class="preview-layout">
 <div class="preview-stage">
 <main id="preview-paper" aria-label="召唤符 Paperlab 完整动效预览"></main>
+<div id="preview-target" aria-label="可拖动的示例目标，仅预览"><span>示例目标</span><small>仅预览 · 可拖动</small></div>
 <button id="example-send" data-preview="replay">示例发送 ↗</button>
 <span class="example-note">本窗口示例按钮 · 不会发送聊天</span>
 </div>
@@ -23,12 +24,16 @@
 <div class="preview-buttons"><button data-preview="replay" disabled>重新播放</button><button id="pause-preview" disabled>暂停</button><button data-preview="stop" disabled>停止</button></div>
 <label class="preview-speed">播放速度 <select id="preview-speed" disabled><option value="1">正常</option><option value="0.5">半速</option><option value="0.25">四分之一速</option></select></label>
 <h2>停在一个阶段，仔细看</h2>
-<div class="preview-chapters"><button data-preview="point" disabled>一 · 取纸</button><button data-preview="unfold" disabled>二 · 纸身舒展</button><button data-preview="writing" disabled>三 · 落墨</button><button data-preview="hold" disabled>四 · 完整符</button><button data-preview="burning" disabled>五 · 燃尽</button><button data-preview="ash" disabled>六 · 余灰</button></div>
+<div class="preview-chapters"><button data-preview="point" disabled>一 · 取纸</button><button data-preview="unfold" disabled>二 · 纸身舒展</button><button data-preview="writing" disabled>三 · 落墨</button><button data-preview="hold" disabled>四 · 完整符</button><button data-preview="folding" disabled>五 · 折起</button><button data-preview="flying" disabled>六 · 飞向目标</button><button data-preview="intake-tip" disabled>七 · 前段没入</button><button data-preview="intake-tail" disabled>八 · 后段没入</button></div>
+<h2>示例目标的位置</h2>
+<div class="preview-target-presets"><button data-preview="target-near" disabled>近处</button><button data-preview="target-far" disabled>远处</button><button data-preview="target-left" disabled>左侧</button><button data-preview="target-right" disabled>右侧</button></div>
+<p id="preview-target-note" class="muted">示例目标仅在本预览页存在。飞行中显著移动目标会清空本轮，重播后使用新位置。</p>
 <p id="preview-source" class="muted"></p>
-<p class="muted">与正常伴随层共用 Paperlab 渲染器。纸从本页示例按钮牵出，完整符面停留 5 秒后燃尽。隐藏或最小化暂停，关闭结束。本页不代表真实发送接入、任务完成或服务器确认。</p>
+<p class="muted">与正常伴随层共用 Paperlab 渲染器。纸从本页示例按钮牵出，全文停留 2 秒后折起，送往本页示例目标。隐藏、最小化或改变窗口大小会清空本轮，需重播。本页不代表真实 Pet 定位、任务完成或服务器确认。</p>
 </section>
 </div>
 <script src="../renderer/ritual-core.js"></script>
+<script src="../renderer/delivery-motion.js"></script>
 <script src="../renderer/entrance-timeline.js"></script>
 <script src="../renderer/send-geometry.js"></script>
 <script src="../renderer/font-coverage.js"></script>

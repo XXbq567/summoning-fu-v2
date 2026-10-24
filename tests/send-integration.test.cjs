@@ -7,7 +7,7 @@ const observation = (sequence = 1, mode = 'chat') => ({ schemaVersion: 1, kind: 
   anchor: { x: 800, y: 700, width: 30, height: 30 }, viewport: { x: 100, y: 50, width: 900, height: 700 },
   evidence: { invoke: true, composerBound: true, foreground: true, minimized: false } });
 
-async function normalMainFixture({ diagnostics = false, profile = null } = {}) {
+async function normalMainFixture({ diagnostics = false, profile = null, workArea = { x: 0, y: 0, width: 1200, height: 800 } } = {}) {
   const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
   const { EventEmitter } = require('node:events'), { createRequire } = require('node:module');
   const filename = path.resolve(__dirname, '../desktop/main.cjs'), localRequire = createRequire(filename);
@@ -15,7 +15,7 @@ async function normalMainFixture({ diagnostics = false, profile = null } = {}) {
   const windows = [], handlers = {}, timers = [], intervals = [], snapshots = [], titleReads = [], settingsWrites = [], diagnosticRows = [];
   const event = { eventId: 'verified-hook-event', sessionId: 'session-a', turnId: 'turn-a', metadata: { model: 'model-a', reasoning: 'untrusted' }, provenance: { model: 'reported', reasoning: 'reported' } };
   const verification = { verified: true, sessionId: 'session-a', turnId: 'turn-a', startedAtMs: 100, offset: 100, contextMissing: false, reasoning: { value: 'xhigh', source: 'reported', model: 'model-a', contextOffset: 200 } };
-  let ready, observer, now = 1000;
+  let ready, observer, deliveryBridge, now = 1000;
   app.setPath = () => {}; app.getPath = () => 'C:\\AppData'; app.requestSingleInstanceLock = () => true; app.setName = () => {}; app.quit = () => {};
   app.whenReady = () => ({ then(fn) { ready = fn; return { catch() {} }; } });
   class FakeWindow extends EventEmitter {
@@ -24,7 +24,7 @@ async function normalMainFixture({ diagnostics = false, profile = null } = {}) {
     hide() { this.visible = false; } showInactive() { this.visible = true; } getBounds() { return this.bounds; } setBounds(bounds) { this.bounds = bounds; } setIgnoreMouseEvents() {}
   }
   class FakeTray extends EventEmitter { setToolTip() {} destroy() {} }
-  screen.getPrimaryDisplay = () => ({ workArea: { x: 0, y: 0, width: 1200, height: 800 } }); screen.getDisplayMatching = screen.getPrimaryDisplay; screen.screenToDipRect = (_w, rect) => rect;
+  screen.getPrimaryDisplay = () => ({ workArea }); screen.getDisplayMatching = screen.getPrimaryDisplay; screen.screenToDipRect = (_w, rect) => rect;
   screen.getAllDisplays = () => [{ id: 1, scaleFactor: 1, ...screen.getPrimaryDisplay() }];
   const permission = { setPermissionRequestHandler() {}, setPermissionCheckHandler() {}, webRequest: { onBeforeRequest() {} } };
   const electron = { app, screen, powerMonitor, BrowserWindow: FakeWindow, Tray: FakeTray, nativeImage: { createFromBitmap: () => ({}) }, Menu: { setApplicationMenu() {} }, session: { defaultSession: permission }, ipcMain: { handle(channel, fn) { handlers[channel] = fn; }, on(channel, fn) { handlers[channel] = fn; } }, systemPreferences: { getAnimationSettings: () => ({ prefersReducedMotion: false }) } };
@@ -34,6 +34,7 @@ async function normalMainFixture({ diagnostics = false, profile = null } = {}) {
       if (name === 'electron') return electron;
       if (name === 'node:fs') return { readFileSync: () => '{}', statSync() { throw new Error('no aliases'); }, writeFileSync(file, value) { if (file.endsWith('summoning-fu-settings.json.tmp')) settingsWrites.push(JSON.parse(value)); }, appendFile(_file, value, _options, callback) { diagnosticRows.push(JSON.parse(value)); callback(); }, renameSync() {} };
       if (name === 'node:perf_hooks') return { performance: { now: () => now } };
+      if (name === './host-state.cjs') return { ...localRequire(name), DeliveryTargetBridge: class extends localRequire(name).DeliveryTargetBridge { constructor() { super(); deliveryBridge = this; } } };
       if (name === './send-observer.cjs') return { SendObserver: class { constructor(options) { observer = options; } start() {} stop() {} } };
       if (name === '../adapter/entrance-event.cjs') return { ...localRequire(name), readEntranceFile: async () => event, verifyEntranceTurn: async () => ({ ...verification }) };
       if (name === '../adapter/chat-title.cjs') return { readChatTitle: async id => { titleReads.push(id); return { value: 'verified title', source: 'codex-session-index' }; } };
@@ -42,11 +43,11 @@ async function normalMainFixture({ diagnostics = false, profile = null } = {}) {
   });
   await ready();
   const flush = () => new Promise(resolve => setImmediate(resolve));
-  return { app, powerMonitor, windows, handlers, snapshots, event, verification, titleReads, settingsWrites, diagnosticRows, observer, flush, latest: () => snapshots.at(-1), advance: ms => { now += ms; intervals.forEach(fn => fn()); }, submit: async () => { app.emit('second-instance', {}, ['electron', '--entrance-file=C:\\fixture\\event.json']); await flush(); } };
+  return { app, screen, powerMonitor, windows, handlers, snapshots, event, verification, titleReads, settingsWrites, diagnosticRows, observer, flush, latest: () => snapshots.at(-1), receiveTarget: raw => deliveryBridge.receive(raw, { sourceNowMs: now, receivedAtMs: now }), advance: ms => { now += ms; intervals.forEach(fn => fn()); }, submit: async () => { app.emit('second-instance', {}, ['electron', '--entrance-file=C:\\fixture\\event.json']); await flush(); } };
 }
 
-test('only automatic isolated QA samples diagnostics at 250ms while normal and interactive profiles retain 1000ms', async () => {
-  for (const [profile, interval] of [[null, 1000], [['--preview-qa-only', '--user-data-dir=C:\\qa\\summoning-fu-preview-qa-a1b2c3d4', '--motion-preview'], 250], [['--paperlab-preview-only', '--user-data-dir=C:\\qa\\summoning-fu-preview-local-a1b2c3d4', '--motion-preview'], 1000]]) {
+test('only automatic isolated QA samples short delivery stages at 100ms while normal and interactive profiles retain 1000ms', async () => {
+  for (const [profile, interval] of [[null, 1000], [['--preview-qa-only', '--user-data-dir=C:\\qa\\summoning-fu-preview-qa-a1b2c3d4', '--motion-preview'], 100], [['--paperlab-preview-only', '--user-data-dir=C:\\qa\\summoning-fu-preview-local-a1b2c3d4', '--motion-preview'], 1000]]) {
     const f = await normalMainFixture({ diagnostics: true, profile }); f.advance(0);
     const initial = f.diagnosticRows.length; assert.ok(initial > 0);
     f.advance(interval - 1); assert.equal(f.diagnosticRows.length, initial);
@@ -76,10 +77,39 @@ test('verified hook uses an independent Pet and starts its full clock only after
   const timing = require('../renderer/entrance-timeline.js').timings;
   f.advance(timing.holdStartMs); assert.equal(f.latest().phase, 'hold');
   f.advance(timing.holdMs - 1); assert.equal(f.latest().phase, 'hold');
-  f.advance(1); assert.equal(f.latest().phase, 'burning');
+  f.advance(1); assert.equal(f.latest().phase, 'hidden');
+  assert.equal(f.latest().deliveryReason, 'target-unavailable');
   f.handlers['fu:action']({ sender: f.windows[0].webContents }, 'hide');
   await f.handlers['fu:renderer-ready']({ sender: f.windows[0].webContents }, ready);
   assert.equal(f.latest().visible, false);
+});
+
+test('normal delivery consumes only the private host target and rebases once without changing the screen paper anchor', async () => {
+  const f = await normalMainFixture({ workArea: { x: 0, y: 0, width: 1600, height: 1200 } }); await f.submit(); const ready = f.latest();
+  await f.handlers['fu:renderer-ready']({ sender: f.windows[0].webContents }, { runId: ready.runId, token: ready.presentationToken, status: 'ready' }); await f.flush();
+  const outer = f.windows[0].getBounds(), paper = f.latest().geometry.targetRect;
+  const anchor = { x: outer.x + paper.x, y: outer.y + paper.y };
+  const target = { targetId: 'private-adapter-target', revision: 1, rect: { x: -180, y: 400, width: 80, height: 70 }, coordinateSpace: 'overlay-local-dip', source: 'supported-host-adapter', valid: true, visible: true, observedAtMonotonicMs: 1000, expiresAtMonotonicMs: 30000 };
+  assert.equal(f.receiveTarget({ ...target, source: 'preview-example' }), false);
+  assert.equal(f.receiveTarget(target), true);
+  f.advance(require('../renderer/entrance-timeline.js').timings.leaveAtMs);
+  assert.equal(f.latest().phase, 'folding', JSON.stringify({ reason: f.latest().deliveryReason, outer, paper, geometry: f.latest().geometry })); assert.equal(f.latest().deliveryReason, 'none');
+  const after = f.windows[0].getBounds(), rect = f.latest().geometry.targetRect;
+  assert.deepEqual({ x: after.x + rect.x, y: after.y + rect.y }, anchor);
+  const frozen = JSON.stringify(f.latest().deliveryPlan);
+  f.advance(100); assert.equal(JSON.stringify(f.latest().deliveryPlan), frozen);
+  assert.equal(f.receiveTarget({ ...target, revision: 2, observedAtMonotonicMs: 7250, visible: false }), false);
+  f.advance(1); assert.equal(f.latest().visible, false);
+  assert.equal(f.receiveTarget({ ...target, revision: 3, observedAtMonotonicMs: 7251 }), true);
+  f.advance(1); assert.equal(f.latest().visible, false);
+});
+
+test('monitor geometry changes cancel independent hook presentations and old readiness cannot revive them', async () => {
+  const f = await normalMainFixture(); await f.submit(); const ready = f.latest();
+  await f.handlers['fu:renderer-ready']({ sender: f.windows[0].webContents }, { runId: ready.runId, token: ready.presentationToken, status: 'ready' }); await f.flush();
+  assert.equal(f.latest().visible, true);
+  f.screen.emit('display-metrics-changed'); assert.equal(f.latest().visible, false);
+  f.handlers['fu:action']({ sender: f.windows[0].webContents }, 'show'); assert.equal(f.latest().visible, false);
 });
 
 test('verified hook final source change, cancellation and duplicate cannot release a prepared run', async () => {
@@ -270,8 +300,8 @@ test('preview preload delivers new bounded stage commands and rejects arbitrary 
   const { EventEmitter } = require('node:events'), ipc = new EventEmitter(), exposed = {}, received = [];
   vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, '../desktop/preload.cjs'), 'utf8'), { require: () => ({ contextBridge: { exposeInMainWorld: (name, value) => { exposed[name] = value; } }, ipcRenderer: ipc }) });
   exposed.fuPreview.subscribe(value => received.push(value));
-  for (const value of ['unfold', 'burning', 'speed-0.5', 'fixture-b', 'executeScript', { command: 'unfold' }]) ipc.emit('fu:preview-command', {}, value);
-  assert.deepEqual(received, ['unfold', 'burning', 'speed-0.5', 'fixture-b']);
+  for (const value of ['unfold', 'folding', 'intake-tail', 'target-hide', 'speed-0.5', 'fixture-b', 'executeScript', { command: 'unfold' }]) ipc.emit('fu:preview-command', {}, value);
+  assert.deepEqual(received, ['unfold', 'folding', 'intake-tail', 'target-hide', 'speed-0.5', 'fixture-b']);
 });
 
 test('normal and preview HTML load the same local Paperlab runtime before their shared renderer', () => {
@@ -354,7 +384,7 @@ test('preview QA runner plans every command inside one isolated profile', () => 
   }
   assert.ok(plan.commands.quit.includes('--quit'));
   const timing = require('../renderer/entrance-timeline.js').timings;
-  assert.equal(plan.holdMs, 5000); assert.equal(plan.totalMs, timing.totalMs);
+  assert.equal(plan.holdMs, 2000); assert.equal(plan.totalMs, timing.totalMs);
 });
 
 test('legacy hook GUI QA fails before starting a shared production runtime', () => {

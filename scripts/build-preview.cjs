@@ -23,6 +23,7 @@ function createStandalone({ rootDir = root } = {}) {
     WINDOW_CSS: read('desktop/window.css').replace('../assets/fonts/MaShanZheng-Regular.ttf', fontData),
     PREVIEW_BRIDGE: bridge,
     RITUAL_CORE: read('renderer/ritual-core.js'),
+    DELIVERY_MOTION: read('renderer/delivery-motion.js'),
     ENTRANCE_TIMELINE: read('renderer/entrance-timeline.js'),
     SEND_GEOMETRY: read('renderer/send-geometry.js'),
     FONT_COVERAGE: read('renderer/font-coverage.js'),
@@ -33,7 +34,7 @@ function createStandalone({ rootDir = root } = {}) {
     THIRD_PARTY_NOTICES: escapeHTML(read('THIRD-PARTY-NOTICES.md')),
     THIRD_PARTY_TERMS: artifacts.licenseFiles.map(file => '<h3>' + escapeHTML(file) + '</h3><pre>' + escapeHTML(fs.readFileSync(path.join(artifacts.licenseRoot, file), 'utf8')) + '</pre>').join('\n')
   };
-  const scripts = new Set(['PREVIEW_BRIDGE', 'RITUAL_CORE', 'ENTRANCE_TIMELINE', 'SEND_GEOMETRY', 'FONT_COVERAGE', 'PAPERLAB_RUNTIME', 'BURN_VIEW', 'PREVIEW_CONTROLLER']);
+  const scripts = new Set(['PREVIEW_BRIDGE', 'RITUAL_CORE', 'DELIVERY_MOTION', 'ENTRANCE_TIMELINE', 'SEND_GEOMETRY', 'FONT_COVERAGE', 'PAPERLAB_RUNTIME', 'BURN_VIEW', 'PREVIEW_CONTROLLER']);
   return read('preview/template.html').replace(/\{\{([A-Z_]+)\}\}/g, (all, key) => {
     if (!Object.hasOwn(replacements, key)) throw Error('Unknown template placeholder: ' + key);
     return scripts.has(key) ? scriptText(replacements[key]) : replacements[key];

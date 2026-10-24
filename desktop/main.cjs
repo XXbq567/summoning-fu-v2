@@ -7,6 +7,7 @@ const crypto = require('node:crypto');
 const { performance } = require('node:perf_hooks');
 const { HostClock, entranceBounds, independentPetLayout, EntranceScheduler, verifyEntranceUntil, startupIntent, sanitizeRenderEvidence, AdmissionEvidence, admissionMessage, entrancePathShape, entranceArgvShapes, parseEntranceArgument, sanitizeReasoningEvidence, previewCommandAllowed, sanitizePreviewEvidence, desktopSettingsSnapshot, PreviewReplayGate, entranceMotionPolicy } = require('./host-state.cjs');
 const { SendAdmissionGate, sendOverlayLayout, workAnchorAssociation, sendDiagnostic, sendDiagnosticInvalidates, previewQaProfile, samePreviewQaProfile } = require('./host-state.cjs');
+const { DeliveryTargetBridge, rebaseDeliveryLayout } = require('./host-state.cjs');
 const { SendObserver } = require('./send-observer.cjs');
 const { EnvelopeBridge } = require('../adapter/envelope.cjs');
 const { RolloutAdapter } = require('../adapter/rollout.cjs');
@@ -18,6 +19,9 @@ let pet, reader, preview, tray, adapter, bridge, clock = new HostClock();
 let previewEvidence = null, previewContext = null, previewEvidenceAt = 0, pendingPreview = false;
 let previewReplayGate = new PreviewReplayGate();
 const entrance = new EntranceTimeline(), scheduler = new EntranceScheduler();
+// Only a future qualified Node host adapter may feed this bridge. There is no
+// renderer IPC for declaring a supported Pet target; current normal runs have none.
+const deliveryTargets = new DeliveryTargetBridge();
 let displayContext = null, pendingTimer = null, expiryTimer = null, expiryKey = '', queuedEntranceFiles = [];
 let entranceCancellation = 0;
 let pendingPresentation = null, presentationGeneration = 0;
@@ -59,18 +63,43 @@ function motionPolicy() {
   try { systemPreference = systemPreferences.getAnimationSettings().prefersReducedMotion; } catch {}
   return entranceMotionPolicy(systemPreference);
 }
+function presentationGeometry(now) {
+  const context = displayContext, current = entrance.current;
+  let target = deliveryTargets.targetAt(now);
+  if (context && current && !pendingPresentation && !current.cancelled && !current.expired) {
+    const elapsed = now - current.startedAt;
+    if (context.deliveryPlan && !target) cancelPresentation('target-changed');
+    else if (elapsed >= entranceTimings.leaveAtMs && !context.deliveryResolved) {
+      context.deliveryResolved = true;
+      if (target && deliveryTargets.freezePlan(context.layout?.geometry, now)) {
+        const previous = context.layout, area = screen.getDisplayMatching(previous.bounds).workArea;
+        const layout = rebaseDeliveryLayout(previous, target, { nowMs: now, workArea: area });
+        if (layout) {
+          context.deliveryOffset = { x: previous.bounds.x - layout.bounds.x, y: previous.bounds.y - layout.bounds.y };
+          context.layout = layout; context.deliveryPlan = layout.deliveryPlan; context.deliveryReason = 'none'; reposition();
+        } else cancelPresentation('geometry-changed');
+      } else context.deliveryReason = deliveryTargets.reason || 'target-unavailable';
+    }
+  }
+  if (!context?.deliveryPlan || current?.cancelled) target = null;
+  else if (target) target = { ...target, rect: { ...target.rect, x: target.rect.x + context.deliveryOffset.x, y: target.rect.y + context.deliveryOffset.y } };
+  return { geometry: context?.layout?.geometry || null, deliveryTarget: target, deliveryPlan: current?.cancelled ? null : context?.deliveryPlan || null, allowPreviewTarget: false, nowMs: now };
+}
 function snapshot() {
   const policy = motionPolicy();
-  const now = performance.now(), task = clock.snapshot(now), frame = entrance.snapshot(now, policy.effectiveReducedMotion);
+  const now = performance.now(), task = clock.snapshot(now), presentation = presentationGeometry(now), rawFrame = entrance.snapshot(now, policy.effectiveReducedMotion, presentation);
+  if (displayContext && entrance.current && !pendingPresentation && !rawFrame.visible && displayContext.terminalElapsed === undefined) displayContext.terminalElapsed = Math.min(rawFrame.elapsedMs, rawFrame.hideAtMs);
+  const frame = displayContext?.terminalElapsed === undefined ? rawFrame : { ...rawFrame, elapsedMs: displayContext.terminalElapsed };
   const sameTurn = displayContext?.sessionId && displayContext?.turnId && task.sessionId === displayContext.sessionId && task.runId === displayContext.turnId;
   return { ...task, ...frame, runId: frame.id, sessionId: displayContext?.sessionId || null, turnId: displayContext?.turnId || null, source: displayContext?.source || 'unknown', activeMs: frame.elapsedMs,
     ...(pendingPresentation ? { runId: pendingPresentation.eventId, elapsedMs: 0, activeMs: 0, visible: false, phase: 'hidden' } : {}),
     presentationPreparing: Boolean(pendingPresentation), presentationToken: displayContext?.presentationToken ?? null, presentationMode: displayContext?.presentationMode || 'unknown',
-    ...policy, geometry: displayContext?.layout?.geometry || null, metadata: displayContext?.metadata || frame.metadata, confirmation: displayContext?.confirmation || 'unknown', observerStatus,
+    ...policy, ...presentation, presentationNowMs: now, metadata: displayContext?.metadata || frame.metadata, confirmation: displayContext?.confirmation || 'unknown', observerStatus,
+    deliveryReason: displayContext?.deliveryReason || 'target-unavailable',
     diagnosticsEnabled: Boolean(diagnosticsFile), state: sameTurn ? task.state : 'unknown', hidden: hidden || !frame.visible, diagnostic,
     binding: displayContext ? { sessionId: displayContext.sessionId, fileName: sameTurn && bound ? path.basename(bound.file) : '入口事件（未绑定当前轮次日志）' } : null,
     adapterLabel: displayContext?.source === 'chatgpt-uia' ? 'Chat 发送控件观察 · 不代表服务端确认或模型工作状态' : displayContext?.source === 'codex-user-prompt-submit' ? '已核验 Codex hook · 独立伴随层，不推断当前焦点聊天或发送按钮位置' : '手动绑定/本地预览 · 不计为自动接入验收',
-    expectedVersion: EXPECTED_VERSION, titleSource: displayContext?.title?.source || 'pending', pendingEntrance: Boolean(scheduler.pending), departureTarget: displayContext?.target?.source || 'unavailable-local-fold' };
+    expectedVersion: EXPECTED_VERSION, titleSource: displayContext?.title?.source || 'pending', pendingEntrance: Boolean(scheduler.pending), departureTarget: presentation.deliveryTarget?.source || 'unavailable' };
 }
 function broadcast() {
   const value = snapshot();
@@ -80,10 +109,10 @@ function broadcast() {
     if (key !== expiryKey) { expiryKey = key; clearTimeout(expiryTimer); const token = value.token; expiryTimer = setTimeout(() => { if (entrance.current?.token === token) broadcast(); }, Math.max(1, value.hideAtMs - value.elapsedMs + 1)); }
   }
   for (const w of liveWindows()) if (!w.webContents.isLoading()) w.webContents.send('fu:snapshot', value);
-  const diagnosticIntervalMs = runtimeProfile.enabled && !runtimeProfile.interactive ? 250 : 1000;
+  const diagnosticIntervalMs = runtimeProfile.enabled && !runtimeProfile.interactive ? 100 : 1000;
   if (diagnosticsFile && performance.now() - diagnosticTick >= diagnosticIntervalMs) {
     diagnosticTick = performance.now();
-    const evidence = { at: new Date().toISOString(), platform: process.platform, electron: process.versions.electron, sessionId: value.sessionId, runId: value.runId, state: value.state, activeMs: Math.round(value.activeMs), kind: value.kind, elapsedMs: Math.round(value.elapsedMs), token: value.token, phase: value.phase, visible: value.visible, hideAtMs: value.hideAtMs, titleSource: value.titleSource, source: displayContext?.source || 'unknown', turnId: displayContext?.turnId || null, sourceStartedAtMs: displayContext?.verificationStartedAtMs || null, sourceOffset: displayContext?.verificationOffset ?? null, pendingEntrance: value.pendingEntrance, departureTarget: value.departureTarget, metadataHash: crypto.createHash('sha256').update(JSON.stringify(value.metadata)).digest('hex'), rendererHealth, windowLifecycle, renderEvidence, captureStatus,
+    const evidence = { at: new Date().toISOString(), platform: process.platform, electron: process.versions.electron, sessionId: value.sessionId, runId: value.runId, state: value.state, activeMs: Math.round(value.activeMs), kind: value.kind, elapsedMs: Math.round(value.elapsedMs), token: value.token, phase: value.phase, visible: value.visible, hideAtMs: value.hideAtMs, titleSource: value.titleSource, source: displayContext?.source || 'unknown', turnId: displayContext?.turnId || null, sourceStartedAtMs: displayContext?.verificationStartedAtMs || null, sourceOffset: displayContext?.verificationOffset ?? null, pendingEntrance: value.pendingEntrance, departureTarget: value.departureTarget, deliveryReason: value.deliveryReason, metadataHash: crypto.createHash('sha256').update(JSON.stringify(value.metadata)).digest('hex'), rendererHealth, windowLifecycle, renderEvidence, captureStatus,
       windows: liveWindows().map((w, index) => ({ index, visible: w.isVisible(), focused: w.isFocused(), minimized: w.isMinimized(), bounds: w.getBounds() })), displays: screen.getAllDisplays().map(d => ({ id: d.id, scaleFactor: d.scaleFactor, workArea: d.workArea })) };
     evidence.admission = admissionEvidence.snapshot();
     evidence.reasoning = sanitizeReasoningEvidence(displayContext?.reasoningEvidence);
@@ -143,11 +172,17 @@ function secureWindow(options, filename) {
 }
 function reposition() {
   if (moving || !pet || pet.isDestroyed()) return;
-  if (displayContext?.layout) { pet.setBounds(displayContext.layout.bounds); return; }
+  if (displayContext?.layout) { moving = true; try { pet.setBounds(displayContext.layout.bounds); } finally { moving = false; } return; }
   moving = true;
   const cb = petAnchor || pet.getBounds(), area = screen.getDisplayMatching(cb).workArea;
   petAnchor = entranceBounds({ x: cb.x, y: cb.y }, area); pet.setBounds(petAnchor);
   moving = false;
+}
+function cancelPresentation(reason = 'geometry-changed') {
+  scheduler.cancel(); clearTimeout(pendingTimer); pendingPresentation = null; presentationGeneration++; entranceCancellation++;
+  deliveryTargets.invalidate(reason);
+  if (displayContext) { displayContext.deliveryReason = reason; displayContext.deliveryPlan = null; displayContext.deliveryResolved = true; }
+  if (entrance.current) entrance.cancel(entrance.current.token);
 }
 function cancelObservedPresentation(reason) {
   observerStatus = reason;
@@ -188,12 +223,13 @@ function independentHookLayout() {
 }
 function applyEntrance(context) {
   clearTimeout(pendingTimer); pendingPresentation = null; presentationGeneration++;
+  deliveryTargets.beginGeneration();
   if (bound && bound.sessionId !== context.sessionId) { adapter?.stop(); adapter = null; bound = null; bindingChanged = true; clock = new HostClock(); }
   const title = context.title || { value: null, source: 'pending' };
   const metadata = { ...(context.metadata || {}), sources: { ...(context.metadata?.sources || context.provenance || {}) }, presentation: { mode: 'entrance', sessionId: context.sessionId, chatTitle: { value: title.value, source: title.source === 'codex-session-index' ? 'reported' : 'unknown' } } };
   // Prompt bodies are never presentation content, even for manual rollout binding.
   metadata.task = title.value; metadata.fullTask = title.value; metadata.fullTaskTruncated = false; metadata.sources.task = title.value ? 'reported' : 'unknown';
-  displayContext = { ...context, title, metadata, presentationToken: presentationGeneration }; renderEvidence = null; visualStages = {};
+  displayContext = { ...context, title, metadata, presentationToken: presentationGeneration, deliveryReason: 'target-unavailable', deliveryResolved: false, deliveryPlan: null }; renderEvidence = null; visualStages = {};
   if (entrance.current) entrance.cancel(entrance.current.token);
   if (!context.layout) {
     if (entrance.current) entrance.cancel(entrance.current.token);
@@ -222,7 +258,7 @@ async function rendererReady(event, value) {
   if (!current()) return;
   clearTimeout(pendingTimer); pendingPresentation = null;
   entrance.trigger(prepared.eventId, performance.now(), prepared.metadata); hidden = false;
-  diagnostic = prepared.presentationMode === 'independent-hook' ? '已核验本次会话来源，在独立伴随层展开、落字、完整保持 5 秒并燃尽；不推断焦点聊天或按钮位置。' : '从已观察的发送控件展开至页面中央，完整停留 5 秒后燃尽；不表示任务完成。';
+  diagnostic = prepared.presentationMode === 'independent-hook' ? '已核验本次会话来源，在独立伴随层展开、落字、全文停留 2 秒；没有已验证 Pet 目标时直接清空，不推断焦点聊天或按钮位置。' : '从已观察的发送控件展开至页面中央，全文停留 2 秒；没有已验证 Pet 目标时直接清空，不表示任务完成。';
   if (prepared.verifiedEvent) recordAdmission('applied', prepared.verifiedEvent, prepared.receivedAt);
   reposition(); pet.showInactive(); broadcast();
 }
@@ -358,7 +394,7 @@ else {
       if (args.diagnosticsFile && path.isAbsolute(args.diagnosticsFile)) diagnosticsFile = args.diagnosticsFile;
       if (args.captureDir && path.isAbsolute(args.captureDir)) { try { await fs.promises.mkdir(args.captureDir, { recursive: true }); captureDirectory = args.captureDir; } catch {} }
       observerStatus = 'preview-only'; diagnostic = '独立示例预览：未启动发送观察器，也未读取或绑定会话。';
-      registerPreviewIPC(); timer = setInterval(broadcast, 250); showMotionPreview(); return;
+      registerPreviewIPC(); timer = setInterval(broadcast, runtimeProfile.interactive ? 250 : 100); showMotionPreview(); return;
     }
     settingsPath = path.join(app.getPath('userData'), 'summoning-fu-settings.json'); readSettings();
     try {
@@ -376,13 +412,23 @@ else {
     pet.setIgnoreMouseEvents(true, { forward: true });
     reader = secureWindow({ width: 960, height: 760, minWidth: 620, minHeight: 480, title: '召唤符 · 展开读符', backgroundColor: '#171610' }, 'reader.html');
     reader.on('close', event => { if (!quitting) { event.preventDefault(); readerRequested = false; reader.hide(); } });
-    for (const name of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(name, () => cancelObservedPresentation('geometry-changed'));
+    for (const name of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(name, () => { cancelPresentation('geometry-changed'); broadcast(); });
+    for (const name of ['move', 'resize']) pet.on(name, () => {
+      if (moving || !displayContext?.layout || !entrance.current || entrance.current.cancelled || entrance.current.expired) return;
+      const actual = pet.getBounds(), expected = displayContext.layout.bounds;
+      if (['x', 'y', 'width', 'height'].some(key => actual[key] !== expected[key])) { cancelPresentation('geometry-changed'); broadcast(); }
+    });
     const pixels = Buffer.alloc(32 * 32 * 4);
     for (let y = 2; y < 30; y++) for (let x = 9; x < 23; x++) { const i = (y * 32 + x) * 4; const ink = (y > 5 && y < 25 && x > 14 && x < 18) || (y === 7 && x > 11 && x < 21); pixels[i] = ink ? 30 : 139; pixels[i + 1] = ink ? 42 : 215; pixels[i + 2] = ink ? 157 : 244; pixels[i + 3] = 255; }
     const icon = nativeImage.createFromBitmap(pixels, { width: 32, height: 32, scaleFactor: 1 });
     tray = new Tray(icon); tray.setToolTip('召唤符 · Codex 插件伴随窗口'); tray.on('click', showReader); tray.on('right-click', contextMenu);
     ipcMain.handle('fu:initial', event => { if (!allowedSender(event)) return null; return { snapshot: snapshot(), coverage }; });
     ipcMain.on('fu:renderer-ready', (event, value) => { void rendererReady(event, value); });
+    ipcMain.on('fu:renderer-invalidated', (event, value) => {
+      if (event.sender !== pet.webContents || !value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== 3 || !['runId', 'token', 'reason'].every(key => Object.hasOwn(value, key))) return;
+      if (value.runId !== entrance.current?.id || value.token !== displayContext?.presentationToken || !['target-changed', 'document-hidden', 'geometry-changed', 'pagehide'].includes(value.reason)) return;
+      cancelPresentation(value.reason); broadcast();
+    });
     registerPreviewIPC();
     ipcMain.on('fu:render-evidence', (event, value) => { if (!pet || event.sender !== pet.webContents) return; const checked = sanitizeRenderEvidence(value); if (checked && checked.runId === entrance.current?.id) { renderEvidence = checked; void captureVisualStage(checked); } });
     ipcMain.on('fu:action', (event, action) => { if (!allowedSender(event)) return;

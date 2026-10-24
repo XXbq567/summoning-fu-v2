@@ -3,6 +3,56 @@ const { Session } = require('../renderer/ritual-timeline.js');
 const { validateUiObservation } = require('../adapter/ui-send-observation.cjs');
 const windowsPath = require('node:path').win32;
 const { burnOutsetDIP } = require('../renderer/send-geometry.js');
+const Delivery = require('../renderer/delivery-motion.js');
+const freezeDeliveryValue = value => { if (value && typeof value === 'object') { Object.values(value).forEach(freezeDeliveryValue); Object.freeze(value); } return value; };
+class DeliveryTargetBridge {
+  constructor() { this.current = null; this.plan = null; this.cancelled = false; this.reason = 'target-unavailable'; this.sourceWatermark = null; }
+  beginGeneration() { this.plan = null; this.cancelled = false; this.reason = 'target-unavailable'; }
+  invalidate(reason = 'target-unavailable') {
+    this.current = null; if (this.plan) this.cancelled = true; this.plan = null;
+    this.reason = ['target-unavailable', 'target-expired', 'target-changed', 'geometry-changed'].includes(reason) ? reason : 'target-unavailable';
+  }
+  receive(raw, { sourceNowMs, receivedAtMs } = {}) {
+    // Host adapters call this Node-only boundary; renderer IPC cannot declare a
+    // supported source. Foreign clocks are translated through remaining lease.
+    if (raw?.source !== 'supported-host-adapter' || raw.coordinateSpace !== 'overlay-local-dip' || !Number.isFinite(sourceNowMs) || !Number.isFinite(receivedAtMs)) return false;
+    const prior = this.sourceWatermark;
+    if (prior?.targetId === raw.targetId && (raw.revision < prior.revision || raw.observedAtMonotonicMs < prior.observedAtMonotonicMs || sourceNowMs < prior.sourceNowMs)) return false;
+    if (!Delivery.validateTarget({ ...raw, valid: true, visible: true }, { nowMs: raw.observedAtMonotonicMs }) || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/.test(raw.targetId) || typeof raw.valid !== 'boolean' || typeof raw.visible !== 'boolean' || raw.observedAtMonotonicMs > sourceNowMs) return false;
+    this.sourceWatermark = { targetId: raw.targetId, revision: raw.revision, observedAtMonotonicMs: raw.observedAtMonotonicMs, sourceNowMs };
+    if (!Delivery.validateTarget(raw, { nowMs: sourceNowMs })) { this.invalidate(); return false; }
+    const value = freezeDeliveryValue({ targetId: raw.targetId, revision: raw.revision, rect: { x: raw.rect.x, y: raw.rect.y, width: raw.rect.width, height: raw.rect.height }, coordinateSpace: raw.coordinateSpace, source: raw.source, valid: true, visible: true,
+      observedAtMonotonicMs: receivedAtMs - (sourceNowMs - raw.observedAtMonotonicMs), expiresAtMonotonicMs: receivedAtMs + Math.min(30000, raw.expiresAtMonotonicMs - sourceNowMs) });
+    if (this.plan && !Delivery.targetStillValid(this.plan, value, { nowMs: receivedAtMs })) { this.cancelled = true; this.plan = null; this.reason = 'target-changed'; }
+    this.current = value;
+    return true;
+  }
+  targetAt(nowMs) {
+    if (this.cancelled) return null;
+    if (this.current && !Delivery.validateTarget(this.current, { nowMs })) this.invalidate('target-expired');
+    return this.current;
+  }
+  freezePlan(geometry, nowMs) {
+    const current = this.targetAt(nowMs); if (!current) return null;
+    if (!this.plan) this.plan = Delivery.createPlan(geometry, current, { nowMs });
+    if (this.plan) this.reason = 'none';
+    return this.plan;
+  }
+}
+function rebaseDeliveryLayout(layout, target, { nowMs, workArea, allowPreviewTarget = false } = {}) {
+  const plan = Delivery.createPlan(layout?.geometry, target, { nowMs, allowPreviewTarget });
+  if (!plan || !layout?.bounds || !workArea || !['x', 'y', 'width', 'height'].every(key => Number.isFinite(workArea[key]))) return null;
+  const union = Delivery.canvasBounds(plan, { x: 0, y: 0, width: layout.bounds.width, height: layout.bounds.height });
+  const x = Math.floor(layout.bounds.x + union.x), y = Math.floor(layout.bounds.y + union.y);
+  const bounds = { x, y, width: Math.ceil(layout.bounds.x + union.x + union.width) - x, height: Math.ceil(layout.bounds.y + union.y + union.height) - y };
+  if (bounds.x < workArea.x || bounds.y < workArea.y || bounds.x + bounds.width > workArea.x + workArea.width || bounds.y + bounds.height > workArea.y + workArea.height) return null;
+  const dx = layout.bounds.x - x, dy = layout.bounds.y - y;
+  const shift = rect => ({ ...rect, x: rect.x + dx, y: rect.y + dy });
+  const geometry = { originRect: shift(layout.geometry.originRect), targetRect: shift(layout.geometry.targetRect) };
+  const deliveryTarget = { ...target, rect: shift(target.rect) };
+  const deliveryPlan = Delivery.createPlan(geometry, deliveryTarget, { nowMs, allowPreviewTarget });
+  return deliveryPlan ? freezeDeliveryValue({ bounds, geometry, deliveryTarget, deliveryPlan }) : null;
+}
 class HostClock {
   constructor({ staleMs = 90000 } = {}) { this.session = new Session(); this.staleMs = staleMs; this.lastEvidence = null; }
   accept(events, now) {
@@ -110,13 +160,25 @@ function entranceMotionPolicy(systemPreference) {
 function sanitizePaperlabEvidence(value) {
   if (!value || value.engine !== 'paperlab' || value.libraryVersion !== '0.8.1' || !['materialReady', 'canvasVisible'].every(key => typeof value[key] === 'boolean')) return null;
   if (Object.hasOwn(value, 'effectiveReducedMotion') && value.effectiveReducedMotion !== false) return null;
-  if (!['point', 'travel', 'unfold', 'writing', 'hold', 'burning', 'ash', 'hidden'].includes(value.phase)) return null;
+  if (!['point', 'travel', 'unfold', 'writing', 'hold', 'folding', 'flying', 'intake', 'burning', 'ash', 'hidden'].includes(value.phase)) return null;
   if (!['actualDrawCount', 'damageVersion', 'textureRasterizations'].every(key => Number.isSafeInteger(value[key]) && value[key] >= 0 && value[key] <= 1000000000)) return null;
   if (!['writing', 'burn'].every(key => Number.isFinite(value[key]) && value[key] >= 0 && value[key] <= 1)) return null;
   if (value.presenceRemaining !== null && (!Number.isFinite(value.presenceRemaining) || value.presenceRemaining < 0 || value.presenceRemaining > 1)) return null;
   if (!['metadataHash', 'textureHash'].every(key => typeof value[key] === 'string' && /^[a-f0-9]{8}$/.test(value[key]))) return null;
   if (value.error !== null && !['engine-unavailable', 'texture-failed', 'webgl-unavailable', 'context-lost', 'render-failed', 'disposed'].includes(value.error)) return null;
   const result = { ...Object.fromEntries(['engine', 'libraryVersion', 'materialReady', 'canvasVisible', 'actualDrawCount', 'phase', 'writing', 'burn', 'presenceRemaining', 'damageVersion', 'metadataHash', 'textureHash', 'textureRasterizations', 'error'].map(key => [key, value[key]])), effectiveReducedMotion: false };
+  if (Object.hasOwn(value, 'actualClearCount')) {
+    if (!Number.isSafeInteger(value.actualClearCount) || value.actualClearCount < 0 || value.actualClearCount > 1000000000) return null;
+    result.actualClearCount = value.actualClearCount;
+  }
+  if (Object.hasOwn(value, 'deliveryPhase')) {
+    if (!['none', 'folding', 'flying', 'intake', 'hidden'].includes(value.deliveryPhase)) return null;
+    if (!['foldBottom', 'foldMiddle', 'flightProgress', 'intakeProgress'].every(key => Number.isFinite(value[key]) && value[key] >= 0 && value[key] <= 1)) return null;
+    if (!['deliveryTargetValid', 'deliveryClipped'].every(key => typeof value[key] === 'boolean')) return null;
+    if (value.deliveryTargetId !== null && (typeof value.deliveryTargetId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/.test(value.deliveryTargetId))) return null;
+    if (!['intakeLeadingY', 'intakeTrailingY', 'intakePlaneY'].every(key => value[key] === null || (Number.isFinite(value[key]) && Math.abs(value[key]) <= 1000000))) return null;
+    for (const key of ['deliveryPhase', 'foldBottom', 'foldMiddle', 'flightProgress', 'intakeProgress', 'deliveryTargetId', 'deliveryTargetValid', 'deliveryClipped', 'intakeLeadingY', 'intakeTrailingY', 'intakePlaneY']) result[key] = value[key];
+  }
   if (['flameCount', 'maxFlameHeightDIP', 'colorPipeline'].some(key => Object.hasOwn(value, key))) {
     if (!Number.isSafeInteger(value.flameCount) || value.flameCount < 0 || value.flameCount > 16 || !Number.isFinite(value.maxFlameHeightDIP) || value.maxFlameHeightDIP < 0 || value.maxFlameHeightDIP > 50 || value.colorPipeline !== 'srgb-no-tone-mapping') return null;
     Object.assign(result, { flameCount: value.flameCount, maxFlameHeightDIP: value.maxFlameHeightDIP, colorPipeline: value.colorPipeline });
@@ -135,7 +197,7 @@ function sanitizeRenderEvidence(value) {
   if (value.runId !== null && (typeof value.runId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/.test(value.runId))) return null;
   const f = value.frame;
   if (!f || !Number.isFinite(f.activeMs) || f.activeMs < 0 || f.activeMs > Number.MAX_SAFE_INTEGER || ![f.burn, f.writing].every(v => Number.isFinite(v) && v >= 0 && v <= 1)) return null;
-  if (!['point', 'travel', 'unfold', 'paper', 'writing', 'seal', 'burning', 'ash', 'renewal', 'hold', 'leaving', 'hidden'].includes(f.phase) || !['idle', 'working', 'waiting', 'completed', 'error', 'cancelled', 'unknown'].includes(f.state)) return null;
+  if (!['point', 'travel', 'unfold', 'paper', 'writing', 'seal', 'folding', 'flying', 'intake', 'burning', 'ash', 'renewal', 'hold', 'leaving', 'hidden'].includes(f.phase) || !['idle', 'working', 'waiting', 'completed', 'error', 'cancelled', 'unknown'].includes(f.state)) return null;
   if (![f.paperOpacity, f.opacity].every(v => Number.isFinite(v) && v >= 0 && v <= 1)) return null;
   if (![f.visibleGlyphs, f.totalGlyphs].every(v => Number.isSafeInteger(v) && v >= 0 && v <= 100000) || f.visibleGlyphs > f.totalGlyphs) return null;
   if (![f.holdStartMs, f.leaveAtMs, f.hideAtMs].every(v => Number.isFinite(v) && v >= 0 && v <= 60000)) return null;
@@ -222,10 +284,10 @@ function sanitizeReasoningEvidence(value) {
   if (!value || value.source !== 'reported' || !['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(value.value) || !Number.isSafeInteger(value.contextOffset) || value.contextOffset < 0) return { value: null, source: 'unknown', contextOffset: null };
   return { value: value.value, source: 'reported', contextOffset: value.contextOffset };
 }
-const previewCommandAllowed = command => ['replay', 'pause', 'resume', 'stop', 'point', 'travel', 'unfold', 'paper', 'writing', 'seal', 'hold', 'burning', 'leaving', 'ash', 'speed-0.25', 'speed-0.5', 'speed-1', 'fixture-a', 'fixture-b'].includes(command);
+const previewCommandAllowed = command => ['replay', 'pause', 'resume', 'stop', 'point', 'travel', 'unfold', 'paper', 'writing', 'seal', 'hold', 'folding', 'flying', 'intake', 'intake-tip', 'intake-tail', 'target-near', 'target-far', 'target-left', 'target-right', 'target-move', 'target-hide', 'speed-0.25', 'speed-0.5', 'speed-1', 'fixture-a', 'fixture-b'].includes(command);
 function sanitizePreviewEvidence(value) {
   if (!value || typeof value.systemReducedMotion !== 'boolean' || value.effectiveReducedMotion !== false || typeof value.documentHidden !== 'boolean' || typeof value.playing !== 'boolean') return null;
-  if (!['point', 'travel', 'unfold', 'paper', 'writing', 'seal', 'hold', 'burning', 'ash', 'leaving', 'hidden'].includes(value.phase)) return null;
+  if (!['point', 'travel', 'unfold', 'paper', 'writing', 'seal', 'hold', 'folding', 'flying', 'intake', 'burning', 'ash', 'leaving', 'hidden'].includes(value.phase)) return null;
   const result = { phase: value.phase, systemReducedMotion: value.systemReducedMotion, effectiveReducedMotion: false, documentHidden: value.documentHidden, playing: value.playing };
   for (const key of ['generation', 'renderCount', 'rafCount', 'visibleGlyphs', 'totalGlyphs']) { if (!Number.isSafeInteger(value[key]) || value[key] < 0 || value[key] > 1000000000) return null; result[key] = value[key]; }
   for (const key of ['elapsedMs', 'holdStartMs', 'leaveAtMs', 'hideAtMs']) { if (!Number.isFinite(value[key]) || value[key] < 0 || value[key] > 60000) return null; result[key] = value[key]; }
@@ -234,6 +296,10 @@ function sanitizePreviewEvidence(value) {
   result.uiElapsedMs = Number.isFinite(value.uiElapsedMs) && value.uiElapsedMs >= 0 && value.uiElapsedMs <= 60000 ? value.uiElapsedMs : null;
   result.burn = Number.isFinite(value.burn) && value.burn >= 0 && value.burn <= 1 ? value.burn : null;
   if (Object.hasOwn(value, 'svgVisible')) { if (typeof value.svgVisible !== 'boolean') return null; result.svgVisible = value.svgVisible; }
+  if (Object.hasOwn(value, 'cancellationReason')) {
+    if (!['none', 'cancelled', 'target-unavailable', 'target-changed', 'document-hidden', 'geometry-changed', 'render-failed', 'pagehide'].includes(value.cancellationReason)) return null;
+    result.cancellationReason = value.cancellationReason;
+  }
   return withPaperlabEvidence(value, result);
 }
 function desktopSettingsSnapshot({ settings = {}, binding, bindingChanged = false, position }) {
@@ -298,4 +364,4 @@ class SendAdmissionGate {
     return { accepted: true, token: this.generation, eventId: 'ui:' + o.observerId + ':' + o.sequence, source: 'chatgpt-uia', confirmation: 'send-invoked', sessionId: null, turnId: null, metadata };
   }
 }
-module.exports = { HostClock, clampBounds, controlBounds, entranceBounds, independentPetLayout, EntranceScheduler, verifyEntranceUntil, startupIntent, previewQaProfile, samePreviewQaProfile, sanitizeRenderEvidence, sanitizePaperlabEvidence, AdmissionEvidence, admissionMessage, entrancePathShape, entranceArgvShapes, parseEntranceArgument, sanitizeReasoningEvidence, previewCommandAllowed, sanitizePreviewEvidence, desktopSettingsSnapshot, PreviewReplayGate, entranceMotionPolicy, SendAdmissionGate, sendOverlayLayout, workAnchorAssociation, sendDiagnostic, sendDiagnosticInvalidates };
+module.exports = { HostClock, DeliveryTargetBridge, rebaseDeliveryLayout, clampBounds, controlBounds, entranceBounds, independentPetLayout, EntranceScheduler, verifyEntranceUntil, startupIntent, previewQaProfile, samePreviewQaProfile, sanitizeRenderEvidence, sanitizePaperlabEvidence, AdmissionEvidence, admissionMessage, entrancePathShape, entranceArgvShapes, parseEntranceArgument, sanitizeReasoningEvidence, previewCommandAllowed, sanitizePreviewEvidence, desktopSettingsSnapshot, PreviewReplayGate, entranceMotionPolicy, SendAdmissionGate, sendOverlayLayout, workAnchorAssociation, sendDiagnostic, sendDiagnosticInvalidates };

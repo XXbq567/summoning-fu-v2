@@ -4,11 +4,11 @@ const fs = require('node:fs');
 const esbuild = require('esbuild');
 const root = path.resolve(__dirname, '..');
 const changedNotice = `/*!
- * LOCAL MODIFICATIONS - Summoning Fu, 2026-10-23.
+ * LOCAL MODIFICATIONS - Summoning Fu, 2026-10-24.
  * This generated bundle includes Paperlab 0.8.1 (Apache-2.0).
- * The local build adds a PURE annotation to the unused FxPost lazy import.
- * Local runtime adapters preserve the original artwork alpha and adjust the
- * Paperlab flame material's alpha coverage, blending, size and local light reach.
+ * Runtime adaptation preserves the original art alpha on the Paperlab sheet.
+ * Project-owned Three.js bands, hinges and clipping implement folded delivery.
+ * This delivery runtime does not import Paperlab fire effects.
  * These are project integration changes; installed upstream files are unchanged.
  * Upstream copyright, license and NOTICE remain applicable and are distributed
  * with the project's third-party notices.

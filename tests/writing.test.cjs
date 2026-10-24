@@ -61,7 +61,7 @@ test('font coverage comes from the actual bundled TTF and reports unsupported co
   assert.match(core.buildTalismanSVG({}), /Microsoft YaHei/);
 });
 
-test('send sequence delegates full paper-and-ink burn to one material and leaves only bounded fading ash', () => {
+test('send sequence hands one complete paper-and-ink snapshot to delivery without independent fire or ash', () => {
   const { frameAt } = require('../renderer/entrance-timeline.js');
   globalThis.RitualCore = core;
   globalThis.RitualSendGeometry = require('../renderer/send-geometry.js');
@@ -78,31 +78,34 @@ test('send sequence delegates full paper-and-ink burn to one material and leaves
     const delegated = [];
     view.material = { render: frame => delegated.push(frame) };
     const geometry = { originRect: { x: 880, y: 680, width: 40, height: 40 }, targetRect: { x: 340, y: 62, width: 320, height: 676 } };
-    const render = time => view.render({ ...frameAt(time), geometry });
+    const target={targetId:'preview',revision:1,rect:{x:800,y:800,width:80,height:80},coordinateSpace:'overlay-local-dip',source:'preview-example',valid:true,visible:true,observedAtMonotonicMs:0,expiresAtMonotonicMs:20000};
+    const options={geometry,deliveryTarget:target,allowPreviewTarget:true,nowMs:100};
+    const render = time => view.render({ ...frameAt(time,false,options), geometry });
     assert.equal(paper.attributes.mask, 'url(#ritual-burn-mask)');
     assert.deepEqual(paper.children, [base, ink], 'paper and ink stay inside their common mask');
     assert.equal(view.rims.attributes.mask, paper.attributes.mask);
     render(5000);
     assert.equal(view.cut.attributes.d, '');
     assert.equal(view.rims.attributes.opacity, '0');
-    render(10650);
-    assert.equal(delegated.at(-1).burn, .5);
-    assert.equal(delegated.at(-1).phase, 'burning');
+    render(6250);
+    assert.equal(delegated.at(-1).burn, 0);
+    assert.equal(delegated.at(-1).phase, 'folding');
+    assert.equal(delegated.at(-1).delivery.plan.target.targetId,'preview');
     assert.equal(delegated.at(-1).visible, true);
     assert.equal(svg.style.display, 'none', 'the SVG cannot leave independent floating ink or fire rings');
     assert.equal(view.cut.attributes.d, '');
     assert.equal(view.rims.attributes.opacity, '0');
-    assert.ok(view.ash.children.length <= 8);
-    render(12150);
-    assert.equal(view.cut.attributes.d, 'M0 0H360V760H0Z');
+    assert.equal(view.ash.children.length,0);
+    render(7000);
+    assert.equal(delegated.at(-1).phase,'flying');
+    assert.equal(view.ash.children.length,0);
+    render(frameAt(7000,false,options).hideAtMs);
+    assert.equal(view.cut.attributes.d, '');
     assert.equal(paper.attributes.opacity, '0');
     assert.equal(view.rims.attributes.opacity, '0');
     assert.equal(view.hot.attributes.d, '');
     assert.equal(view.glow.attributes.opacity, '0');
-    assert.ok(view.ash.children.length > 0 && view.ash.children.length <= 8);
-    render(12325);
-    assert.ok(Number(view.ash.attributes.opacity) > 0 && Number(view.ash.attributes.opacity) < 1);
-    render(12500);
+    assert.equal(view.ash.children.length,0);
     assert.equal(svg.style.visibility, 'hidden');
     assert.equal(view.ash.children.length, 0);
     assert.equal(view.seal.attributes.opacity, '0');
@@ -112,7 +115,7 @@ test('send sequence delegates full paper-and-ink burn to one material and leaves
   }
 });
 
-test('send sequence completes every glyph and trace before its five-second hold without independent ink fading', () => {
+test('send sequence completes every glyph and trace before its two-second hold without independent ink fading', () => {
   const { frameAt } = require('../renderer/entrance-timeline.js');
   globalThis.RitualCore = core;
   globalThis.RitualSendGeometry = require('../renderer/send-geometry.js');
@@ -129,9 +132,8 @@ test('send sequence completes every glyph and trace before its five-second hold 
     view.render({ ...frameAt(time), geometry });
     for (const group of view.writingSteps) for (const step of group.steps) assert.equal(step.element.style.visibility, 'hidden');
   }
-  // At the burn start there are no particles yet, so this exercises the real
-  // renderer without a browser while checking ink stays under the burn mask.
-  for (const time of [4150, 5000, 9149, 9150]) {
+  // Completion is frozen while reading; expiration never changes a task state.
+  for (const time of [4150, 5000, 6149]) {
     view.render({ ...frameAt(time), geometry });
     for (const group of view.writingSteps) for (const step of group.steps) {
       assert.equal(step.element.style.visibility, 'visible');

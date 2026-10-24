@@ -49,24 +49,22 @@ function entrance() {
   return require('../renderer/entrance-timeline.js');
 }
 
-test('send sequence finishes paper before ink, holds five seconds and burns once without task completion', () => {
+test('send sequence finishes paper before ink, reads two seconds and clears without an authenticated target', () => {
   const { frameAt } = entrance();
   for (const time of [0, 119, 120, 799, 800, 1949, 1950]) assert.equal(frameAt(time).writing, 0);
-  for (const [time, phase] of [[0, 'point'], [120, 'travel'], [850, 'unfold'], [1950, 'writing'], [4150, 'hold'], [9149, 'hold'], [9150, 'burning'], [12150, 'ash'], [12500, 'hidden']]) assert.equal(frameAt(time).phase, phase);
-  const full = frameAt(4150), burning = frameAt(10650), ashes = frameAt(12150);
-  assert.equal(full.writing, 1); assert.equal(full.leaveAtMs - full.holdStartMs, 5000);
-  assert.equal(frameAt(9149).burn, 0); assert.equal(frameAt(9150).burn, 0);
-  assert.ok(burning.burn > 0 && burning.burn < 1); assert.equal(burning.visualFireActive, true);
-  assert.equal(burning.state, undefined); assert.equal(ashes.burn, 1); assert.equal(ashes.visualFireActive, false);
-  assert.equal(frameAt(12500).visible, false); assert.equal(frameAt(12500).ashOpacity, 0);
+  for (const [time, phase] of [[0, 'point'], [120, 'travel'], [850, 'unfold'], [1950, 'writing'], [4150, 'hold'], [6149, 'hold'], [6150, 'hidden']]) assert.equal(frameAt(time).phase, phase);
+  const full = frameAt(4150), cleared = frameAt(6150);
+  assert.equal(full.writing, 1); assert.equal(full.leaveAtMs - full.holdStartMs, 2000);
+  assert.equal(cleared.burn, 0); assert.equal(cleared.visualFireActive, false); assert.equal(cleared.ashOpacity, 0);
+  assert.equal(cleared.state, undefined); assert.equal(cleared.visible, false);
   assert.equal(frameAt(50000).visible, false);
 });
 
-test('send sequence keeps complete ink and paper still for exactly five seconds', () => {
+test('send sequence keeps complete ink and paper still for exactly two seconds', () => {
   const { frameAt } = entrance();
   assert.equal(frameAt(0).writing, 0);
   assert.equal(frameAt(2400).phase, 'writing');
-  for (const elapsed of [4150, 5000, 9149]) {
+  for (const elapsed of [4150, 5000, 6149]) {
     const frame = frameAt(elapsed);
     assert.equal(frame.phase, 'hold');
     assert.equal(frame.writing, 1);
@@ -77,9 +75,8 @@ test('send sequence keeps complete ink and paper still for exactly five seconds'
     assert.equal(frame.needsAnimation, false);
     assert.deepEqual(frame.progress, { travel: 1, stretchX: 1, stretchY: 1 });
   }
-  assert.equal(frameAt(9150).phase, 'burning');
-  assert.equal(frameAt(12150).opacity, 0);
-  assert.equal(frameAt(12500).visible, false);
+  assert.equal(frameAt(6150).phase, 'hidden');
+  assert.equal(frameAt(6150).opacity, 0);
   assert.equal(frameAt(100000).visible, false);
 });
 
@@ -100,22 +97,21 @@ test('send sequence shares immutable timing and progress with no ink before unfo
   assert.equal(frameAt(2900).needsAnimation, true);
   const hold = frameAt(4150);
   assert.equal(hold.holdStartMs, timings.holdStartMs);
-  assert.equal(hold.leaveAtMs - hold.holdStartMs, 5000);
-  assert.equal(hold.hideAtMs, timings.totalMs);
+  assert.equal(hold.leaveAtMs - hold.holdStartMs, 2000);
+  assert.equal(hold.hideAtMs, timings.leaveAtMs);
   assert.equal(hold.needsAnimation, false);
-  const burning = frameAt(10650);
-  assert.equal(burning.burn, .5);
-  assert.equal(burning.opacity, 1);
-  assert.equal(burning.needsAnimation, true);
-  assert.ok(frameAt(12325).ashOpacity > 0 && frameAt(12325).ashOpacity < 1);
-  assert.equal(frameAt(12500).needsAnimation, false);
+  const cleared = frameAt(6150);
+  assert.equal(cleared.burn, 0);
+  assert.equal(cleared.opacity, 0);
+  assert.equal(cleared.needsAnimation, false);
+  assert.equal(cleared.ashOpacity, 0);
   assert.ok(Object.isFrozen(timings));
   assert.ok(Object.isFrozen(paper));
   assert.ok(Object.isFrozen(paper.progress));
   const reduced = frameAt(0, true);
   assert.equal(reduced.paperOpacity, 1);
   assert.equal(reduced.holdStartMs, 0);
-  assert.equal(reduced.leaveAtMs, 5000);
+  assert.equal(reduced.leaveAtMs, 2000);
   assert.equal(reduced.needsAnimation, false);
 });
 
@@ -123,8 +119,8 @@ test('reduced motion still expires, and stale cancellation cannot hide a retrigg
   const { frameAt, EntranceTimeline } = entrance();
   assert.equal(frameAt(0, true).writing, 1);
   assert.equal(frameAt(0, true).phase, 'hold');
-  assert.equal(frameAt(4999, true).visible, true);
-  assert.equal(frameAt(5000, true).visible, false);
+  assert.equal(frameAt(1999, true).visible, true);
+  assert.equal(frameAt(2000, true).visible, false);
   assert.deepEqual(frameAt(13500, true).progress, { travel: 1, stretchX: 1, stretchY: 1 });
   assert.equal(frameAt(14000, true).visible, false);
   const timeline = new EntranceTimeline();
@@ -145,18 +141,18 @@ test('motion preference changes neither rewind complete lettering nor extend or 
   const timeline = new EntranceTimeline();
   timeline.trigger('chat-a', 0, metadata(null));
   let frame = timeline.snapshot(0, true);
-  assert.equal(frame.hideAtMs, 5000);
-  frame = timeline.snapshot(4000, false);
+  assert.equal(frame.hideAtMs, 2000);
+  frame = timeline.snapshot(1000, false);
   assert.equal(frame.reducedMotion, true);
   assert.equal(frame.phase, 'hold');
-  assert.equal(frame.hideAtMs, 5000);
+  assert.equal(frame.hideAtMs, 2000);
   assert.equal(frameAt(frame.elapsedMs, frame.reducedMotion, frame).visible, frame.visible);
-  assert.equal(timeline.snapshot(5000, false).visible, false);
+  assert.equal(timeline.snapshot(2000, false).visible, false);
   assert.equal(timeline.snapshot(12000, true).visible, false);
   timeline.trigger('chat-b', 13000, metadata(null));
   timeline.snapshot(13000, false);
   frame = timeline.snapshot(14500, true);
-  assert.equal(frame.hideAtMs, 6500);
+  assert.equal(frame.hideAtMs, 3500);
   assert.equal(frame.phase, 'hold');
   assert.equal(timeline.snapshot(24500, false).visible, false);
 });

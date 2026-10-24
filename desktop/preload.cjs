@@ -6,6 +6,9 @@ contextBridge.exposeInMainWorld('fuHost', Object.freeze({
   action: action => { if (actions.has(action)) ipcRenderer.send('fu:action', action); },
   reportRender: value => ipcRenderer.send('fu:render-evidence', value),
   reportReady: value => ipcRenderer.send('fu:renderer-ready', value),
+  reportInvalidation: value => {
+    if (value && ['target-changed', 'document-hidden', 'geometry-changed', 'pagehide'].includes(value.reason)) ipcRenderer.send('fu:renderer-invalidated', value);
+  },
   subscribe: listener => {
     if (typeof listener !== 'function') return;
     const handler = (_event, value) => listener(value);
@@ -18,7 +21,7 @@ contextBridge.exposeInMainWorld('fuPreview', Object.freeze({
   report: value => ipcRenderer.send('fu:preview-evidence', value),
   subscribe: listener => {
     if (typeof listener !== 'function') return;
-    const allowed = new Set(['replay', 'pause', 'resume', 'stop', 'point', 'travel', 'unfold', 'paper', 'writing', 'seal', 'hold', 'burning', 'leaving', 'ash', 'speed-0.25', 'speed-0.5', 'speed-1', 'fixture-a', 'fixture-b']);
+    const allowed = new Set(['replay', 'pause', 'resume', 'stop', 'point', 'travel', 'unfold', 'paper', 'writing', 'seal', 'hold', 'folding', 'flying', 'intake', 'intake-tip', 'intake-tail', 'target-near', 'target-far', 'target-left', 'target-right', 'target-move', 'target-hide', 'speed-0.25', 'speed-0.5', 'speed-1', 'fixture-a', 'fixture-b']);
     const handler = (_event, value) => { if (allowed.has(value)) listener(value); };
     ipcRenderer.on('fu:preview-command', handler);
     return () => ipcRenderer.removeListener('fu:preview-command', handler);

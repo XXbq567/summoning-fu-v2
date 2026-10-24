@@ -145,13 +145,13 @@
       const geometry = root.RitualSendGeometry && root.RitualSendGeometry.geometryAt(frame, frame.geometry);
       const visible = !this.disposed && frame.visible && !!geometry;
       this.lastEntrancePhase = frame.phase;
-      const materialPhase = ['point', 'travel', 'unfold', 'burning'].includes(frame.phase);
+      const materialPhase = ['point', 'travel', 'unfold', 'folding', 'flying', 'intake'].includes(frame.phase);
       // SVG is the original sharp typography during writing and the entire
       // hold. Only a fully flat blank sheet hands off to those glyphs.
-      this.render({ ...frame, kind: undefined, state: 'entrance', seed: 0, burn: frame.phase === 'ash' ? 1 : 0,
+      this.render({ ...frame, kind: undefined, state: 'entrance', seed: 0, burn: 0,
         variant: 'bottom-up', activeMs: frame.elapsedMs,
         visualFireActive: false,
-        ashOpacity: visible && frame.phase === 'ash' ? frame.ashOpacity : 0,
+        ashOpacity: 0,
         opacity: visible && !materialPhase ? frame.opacity : 0 }, reduced);
       if (this.paperBase) this.paperBase.setAttribute('opacity', reduced ? 1 : clamp(frame.paperOpacity ?? 1));
       this.svg.style.transform = '';

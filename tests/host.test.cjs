@@ -56,11 +56,11 @@ test('normal entrance retains full motion when system preference is enabled or c
   const { EntranceTimeline, timings } = require('../renderer/entrance-timeline.js');
   assert.equal(typeof entranceMotionPolicy, 'function');
   const timeline = new EntranceTimeline(); timeline.trigger('normal-hook', 0, {});
-  for (const [time, system, phase] of [[(timings.pointEndMs + timings.travelEndMs) / 2, true, 'travel'], [(timings.travelEndMs + timings.paperEndMs) / 2, true, 'unfold'], [(timings.paperEndMs + timings.writingEndMs) / 2, false, 'writing'], [timings.holdStartMs + timings.holdMs / 2, true, 'hold'], [(timings.leaveAtMs + timings.burnEndMs) / 2, true, 'burning']]) {
+  for (const [time, system, phase] of [[(timings.pointEndMs + timings.travelEndMs) / 2, true, 'travel'], [(timings.travelEndMs + timings.paperEndMs) / 2, true, 'unfold'], [(timings.paperEndMs + timings.writingEndMs) / 2, false, 'writing'], [timings.holdStartMs + timings.holdMs / 2, true, 'hold'], [timings.leaveAtMs, true, 'hidden']]) {
     const policy = entranceMotionPolicy(system);
     assert.equal(policy.systemReducedMotion, system); assert.equal(policy.effectiveReducedMotion, false);
     const frame = timeline.snapshot(time, policy.effectiveReducedMotion);
-    assert.equal(frame.phase, phase); assert.equal(frame.hideAtMs, timings.totalMs); assert.equal(frame.reducedMotion, false);
+    assert.equal(frame.phase, phase); assert.equal(frame.hideAtMs, timings.leaveAtMs); assert.equal(frame.reducedMotion, false);
   }
   assert.equal(timeline.snapshot(timings.totalMs, entranceMotionPolicy(true).effectiveReducedMotion).visible, false);
 });

@@ -7,18 +7,18 @@ try { ({ geometryAt } = require('../renderer/send-geometry.js')); } catch {}
 const geometry = { originRect: { x: 880, y: 680, width: 40, height: 40 }, targetRect: { x: 340, y: 62, width: 320, height: 676 } };
 const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-8, `${a} differs from ${b}`);
 
-test('only the burning canvas gains top room while the projected paper stays at the same screen point', () => {
-  const { canvasBoundsAt, burnOutsetDIP } = require('../renderer/send-geometry.js');
-  assert.equal(burnOutsetDIP, 56, '50 DIP nominal tongues plus the library vertex puff allowance');
+test('delivery canvas encloses its planned path while the projected paper stays at the same screen point', () => {
+  const { canvasBoundsAt } = require('../renderer/send-geometry.js');
+  const target={targetId:'example',revision:1,rect:{x:800,y:800,width:80,height:80},coordinateSpace:'overlay-local-dip',source:'preview-example',valid:true,visible:true,observedAtMonotonicMs:0,expiresAtMonotonicMs:10000};
+  const options={geometry,deliveryTarget:target,allowPreviewTarget:true,nowMs:100};
   const before = canvasBoundsAt(frameAt(1400), geometry);
-  const burn = canvasBoundsAt(frameAt(10650), geometry);
+  const frame=frameAt(7000,false,options),delivery=canvasBoundsAt(frame,geometry),planned=frame.delivery.plan.bounds;
   assert.equal(before.y, geometry.targetRect.y - 24);
-  assert.equal(burn.y, geometry.targetRect.y - 56);
-  assert.equal(burn.x, before.x); assert.equal(burn.width, before.width);
-  assert.equal(burn.y + burn.height, before.y + before.height);
+  assert.ok(delivery.x<=planned.x&&delivery.y<=planned.y);
+  assert.ok(delivery.x+delivery.width>=planned.x+planned.width&&delivery.y+delivery.height>=planned.y+planned.height);
   const paperW = geometry.targetRect.width * 264 / 360;
   const targetY = geometry.targetRect.y + geometry.targetRect.height * 375 / 760;
-  for (const bounds of [before, burn]) {
+  for (const bounds of [before, delivery]) {
     const localWorldY = -(targetY - bounds.y - bounds.height / 2) / paperW;
     close(bounds.y + bounds.height / 2 - localWorldY * paperW, targetY);
   }
@@ -31,7 +31,7 @@ test('send geometry places an actual six-DIP paper point at the supplied send ce
   close(target.y + first.translateY + target.height * 375 / 760 * first.scaleY, 700);
   close(target.width * 264 / 360 * first.scaleX, 6);
   close(target.height * 710 / 760 * first.scaleY, 6);
-  for (const time of [1950, 3050, 4150, 10650, 12150]) {
+  for (const time of [1950, 3050, 4150, 6149]) {
     const value = geometryAt(frameAt(time), geometry);
     close(value.translateX, 0); close(value.translateY, 0); close(value.scaleX, 1); close(value.scaleY, 1);
   }
@@ -63,7 +63,7 @@ test('send geometry follows a bounded gentle path and never deforms visible lett
     assert.ok(Object.values(value).every(Number.isFinite));
     if (frame.writing > 0) { close(value.scaleX, 1); close(value.scaleY, 1); }
   }
-  for (const time of [1951, 3050, 4150, 9149, 10650]) {
+  for (const time of [1951, 3050, 4150, 6149]) {
     const value = geometryAt(frameAt(time), geometry);
     close(value.scaleX, 1); close(value.scaleY, 1);
   }

@@ -1,8 +1,8 @@
 /* Pure overlay-local geometry. Host positioning and DIP conversion happen once. */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.RitualSendGeometry = factory();
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./delivery-motion.js'));
+  else root.RitualSendGeometry = factory(root.RitualDelivery);
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (Delivery) {
   'use strict';
   // Existing SVG viewport and visible paper bounds; never include its margins
   // when aligning the paper point to the observed send-button center.
@@ -55,7 +55,8 @@
     const y = Math.min(t.y - (frame.phase === 'burning' ? burnOutsetDIP : 24), fromY - paperH * .2);
     const right = Math.max(t.x + t.width + 24, fromX + paperW * .6);
     const bottom = Math.max(t.y + t.height + 24, fromY + paperH * .2);
-    return Object.freeze({ x, y, width: Math.ceil(right - x), height: Math.ceil(bottom - y) });
+    const base = Object.freeze({ x, y, width: Math.ceil(right - x), height: Math.ceil(bottom - y) });
+    return frame.delivery?.plan ? Delivery.canvasBounds(frame.delivery.plan, base) : base;
   }
   return Object.freeze({ geometryAt, canvasBoundsAt, burnOutsetDIP });
 });

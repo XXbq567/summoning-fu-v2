@@ -35,7 +35,7 @@ test('slow preview changes speed without jumping position or advancing while pau
   clock.resume(10000); assert.equal(clock.snapshot(12000).elapsedMs, 2500);
 });
 test('preview command and animation gates do not allow arbitrary IPC or omit paper/seal', () => {
-  assert.equal(previewCommandAllowed('unfold'), true); assert.equal(previewCommandAllowed('burning'), true);
+  assert.equal(previewCommandAllowed('unfold'), true); assert.equal(previewCommandAllowed('folding'), true);
   assert.equal(previewCommandAllowed('paper'), true); assert.equal(previewCommandAllowed('replay'), true);
   assert.equal(previewCommandAllowed('executeScript'), false); assert.equal(previewCommandAllowed({ command: 'paper' }), false);
   for (const phase of ['paper', 'writing', 'seal', 'leaving']) assert.equal(shouldAnimateFrame({ visible: true, reducedMotion: false, needsAnimation: true, phase }, false), true);

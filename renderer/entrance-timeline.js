@@ -1,17 +1,22 @@
 /* One-shot chat entrance presentation. Expiry is not a task lifecycle event. */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.RitualEntrance = factory();
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./delivery-motion.js'));
+  else root.RitualEntrance = factory(root.RitualDelivery);
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (Delivery) {
   'use strict';
   const timings = Object.freeze({ pointEndMs: 120, travelEndMs: 850, paperEndMs: 1950,
-    writingMs: 2200, writingEndMs: 4150, holdStartMs: 4150, holdMs: 5000,
-    leaveAtMs: 9150, burnAtMs: 9150, burnMs: 3000, burnEndMs: 12150, ashMs: 350, totalMs: 12500 });
+    writingMs: 2200, writingEndMs: 4150, holdStartMs: 4150, holdMs: 2000,
+    leaveAtMs: 6150, deliveryAtMs: 6150, deliveryMaxMs: 2600, totalMs: 8750 });
   const clamp = value => Math.max(0, Math.min(1, value));
   const smooth = value => value * value * (3 - 2 * value);
   function frameAt(elapsedMs, reduced = false, options = {}) {
     const elapsed = Math.max(0, Number.isFinite(elapsedMs) ? elapsedMs : timings.totalMs);
-    const hideAtMs = Number.isFinite(options.hideAtMs) ? Math.min(timings.totalMs, Math.max(timings.holdMs, options.hideAtMs)) : reduced ? timings.holdMs : timings.totalMs;
+    const candidate = options.deliveryPlan;
+    const deliveryPlan = candidate
+      ? (Delivery?.targetStillValid(candidate, options.deliveryTarget || candidate.target, options) ? candidate : null)
+      : Delivery?.createPlan(options.geometry, options.deliveryTarget, options);
+    const naturalEnd = deliveryPlan ? timings.leaveAtMs + deliveryPlan.durationMs : timings.leaveAtMs;
+    const hideAtMs = Number.isFinite(options.hideAtMs) ? Math.min(naturalEnd, Math.max(timings.holdMs, options.hideAtMs)) : reduced ? timings.holdMs : naturalEnd;
     const visible = elapsed < hideAtMs;
     const holdStartMs = reduced ? hideAtMs - timings.holdMs : timings.holdStartMs;
     const leaveAtMs = reduced ? hideAtMs : timings.leaveAtMs;
@@ -22,19 +27,20 @@
       stretchX: elapsed < timings.travelEndMs ? .22 * smooth(clamp((travel - .3) / .7)) : .22 + .78 * smooth(unfold),
       stretchY: elapsed < timings.pointEndMs ? .02 * smooth(elapsed / timings.pointEndMs) : .02 + .98 * smooth(travel),
     });
+    const deliveryState = deliveryPlan && elapsed >= timings.leaveAtMs ? Delivery.sample(deliveryPlan, elapsed - timings.leaveAtMs) : null;
     const phase = !visible ? 'hidden' : reduced ? 'hold' : elapsed < timings.pointEndMs ? 'point'
       : elapsed < timings.travelEndMs ? 'travel' : elapsed < timings.paperEndMs ? 'unfold'
       : elapsed < timings.writingEndMs ? 'writing' : elapsed < leaveAtMs ? 'hold'
-      : elapsed < timings.burnEndMs ? 'burning' : 'ash';
-    const burn = reduced ? 0 : clamp((elapsed - timings.burnAtMs) / timings.burnMs);
+      : deliveryState?.phase || 'hidden';
+    const burn = 0;
     return Object.freeze({
       kind: 'entrance', elapsedMs: elapsed, visible, burn, reducedMotion: reduced, hideAtMs, holdStartMs, leaveAtMs,
-      phase, progress, visualFireActive: visible && phase === 'burning',
+      phase, progress, delivery: deliveryPlan ? Object.freeze({ plan: deliveryPlan, state: deliveryState }) : null, visualFireActive: false,
       needsAnimation: visible && !reduced && phase !== 'hold',
-      paperOpacity: visible && (reduced || elapsed < timings.burnEndMs) ? 1 : 0,
+      paperOpacity: visible ? 1 : 0,
       writing: reduced ? 1 : clamp((elapsed - timings.paperEndMs) / timings.writingMs),
-      opacity: visible && (reduced || elapsed < timings.burnEndMs) ? 1 : 0,
-      ashOpacity: phase === 'burning' ? 1 : phase === 'ash' ? 1 - smooth(clamp((elapsed - timings.burnEndMs) / timings.ashMs)) : 0,
+      opacity: visible ? 1 : 0,
+      ashOpacity: 0,
     });
   }
   function freeze(value) {
@@ -57,7 +63,7 @@
       this.current.cancelled = true;
       return true;
     }
-    snapshot(now, reduced = false) {
+    snapshot(now, reduced = false, options = {}) {
       if (!Number.isFinite(now)) throw new TypeError('Use finite monotonic time for presentation');
       this.lastNow = Math.max(this.lastNow, now);
       const current = this.current;
@@ -69,7 +75,7 @@
         const fullAt = Math.min(timings.holdStartMs, elapsed);
         current.hideAtMs = Math.min(current.hideAtMs, fullAt + timings.holdMs);
       }
-      const frame = frameAt(elapsed, current ? current.reducedMotion : reduced, current || {});
+      const frame = frameAt(elapsed, current ? current.reducedMotion : reduced, { ...(current || {}), ...options });
       if (current && !frame.visible) current.expired = true;
       return Object.freeze({ ...frame, id: current ? current.id : null, token: current ? current.token : null, metadata: current ? current.metadata : null });
     }

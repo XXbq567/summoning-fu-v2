@@ -4,21 +4,22 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-test('material sequence finishes the paper before ink and gives complete text exactly five seconds', () => {
+test('material sequence finishes the paper before ink and gives complete text exactly two seconds', () => {
   const { frameAt, timings } = require('../renderer/entrance-timeline.js');
   assert.equal(timings.paperEndMs, 1950);
   assert.equal(frameAt(1949).writing, 0);
   assert.equal(frameAt(1950).writing, 0);
   assert.equal(frameAt(4150).writing, 1);
-  for (const t of [4150, 6000, 9149]) {
+  for (const t of [4150, 5000, 6149]) {
     assert.equal(frameAt(t).phase, 'hold');
     assert.equal(frameAt(t).needsAnimation, false);
   }
-  assert.equal(frameAt(9150).phase, 'burning');
-  assert.equal(frameAt(10650).burn, .5);
-  assert.equal(frameAt(12150).visualFireActive, false);
-  assert.equal(frameAt(12150).paperOpacity, 0);
-  assert.equal(frameAt(12500).visible, false);
+  assert.equal(timings.leaveAtMs-timings.holdStartMs,2000);
+  assert.equal(frameAt(6150).phase, 'hidden');
+  assert.equal(frameAt(6150).burn, 0);
+  assert.equal(frameAt(6150).visualFireActive, false);
+  assert.equal(frameAt(6150).paperOpacity, 0);
+  assert.equal(frameAt(6150).visible, false);
 });
 
 function controller() {

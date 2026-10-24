@@ -1,24 +1,50 @@
 'use strict';
 let latest = null, received = 0, view, viewKey = '', readyKey = '', animation = null, coverage = {};
 let rafCount = 0, renderCount = 0, lastFrame = null, renderedRunId = null, lastReportAt = -Infinity;
+let deliveryPlan = null, planKey = '', cancelledKey = '', closed = false, terminalElapsed = null;
 const reduce = matchMedia('(prefers-reduced-motion: reduce)');
 function stop() { if (animation !== null) cancelAnimationFrame(animation); animation = null; }
 function keyFor(value) { return value ? value.runId + ':' + value.presentationToken : ''; }
+function naturalEnd() { return RitualEntrance.timings.leaveAtMs + ((deliveryPlan || latest?.deliveryPlan)?.durationMs || 0); }
+function finishNaturally() {
+  terminalElapsed = naturalEnd(); cancelledKey = viewKey; deliveryPlan = null; planKey = ''; stop();
+}
+function invalidate(reason) {
+  if (!latest || cancelledKey === viewKey) return;
+  cancelledKey = viewKey; deliveryPlan = null; planKey = ''; stop();
+  fuHost.reportInvalidation?.({ runId: latest.runId, token: latest.presentationToken, reason });
+}
 function render() {
   animation = null;
-  if (!latest || !view || readyKey !== viewKey) return;
-  const concealed = document.hidden || latest.hidden || latest.presentationPreparing;
-  const delta = !concealed && latest.visible ? Math.min(300, Math.max(0, performance.now() - received)) : 0;
-  const frame = { ...latest, ...RitualEntrance.frameAt(latest.elapsedMs + delta, false, latest), ...(concealed ? { visible: false, opacity: 0, ashOpacity: 0, needsAnimation: false } : {}) };
+  if (closed || !latest || !view || readyKey !== viewKey) return;
+  const concealed = document.hidden || latest.hidden || latest.presentationPreparing || cancelledKey === viewKey;
+  const localDelta = Math.max(0, performance.now() - received), delta = !concealed && latest.visible ? Math.min(300, localDelta) : 0;
+  const nowMs = Number.isFinite(latest.presentationNowMs) ? latest.presentationNowMs + localDelta : performance.now();
+  let frame = { ...latest, ...RitualEntrance.frameAt(latest.elapsedMs + delta, false, { ...latest, deliveryPlan, nowMs, allowPreviewTarget: false }) };
+  if (!concealed && latest.visible && !frame.visible) {
+    const naturalEnd = deliveryPlan ? RitualEntrance.timings.leaveAtMs + deliveryPlan.durationMs : RitualEntrance.timings.leaveAtMs;
+    if (deliveryPlan && frame.elapsedMs < naturalEnd) invalidate('target-changed');
+    else finishNaturally();
+  }
+  if (terminalElapsed !== null) frame = { ...frame, elapsedMs: terminalElapsed, hideAtMs: terminalElapsed };
+  if (concealed || cancelledKey === viewKey) frame = { ...frame, visible: false, phase: 'hidden', opacity: 0, paperOpacity: 0, ashOpacity: 0, needsAnimation: false, delivery: null };
   if (!concealed && frame.phase === 'hold' && lastFrame?.phase === 'hold' && renderedRunId === latest.runId) return;
   view.render(frame, false); renderCount++; renderedRunId = latest.runId; lastFrame = frame;
   if (frame.visible && frame.needsAnimation) animation = requestAnimationFrame(() => { rafCount++; render(); });
 }
 function update(value) {
+  if (closed) return;
   latest = value; received = performance.now(); stop();
   const rect = value.geometry?.targetRect, container = document.querySelector('#talisman');
   if (rect) { container.style.left = rect.x + 'px'; container.style.top = rect.y + 'px'; container.style.width = rect.width + 'px'; container.style.height = rect.height + 'px'; }
   const nextKey = keyFor(value);
+  if (nextKey !== viewKey) { cancelledKey = ''; deliveryPlan = null; planKey = ''; terminalElapsed = null; }
+  if (!value.presentationPreparing && value.hidden) cancelledKey = nextKey;
+  if (value.deliveryPlan && cancelledKey !== nextKey) {
+    const incomingKey = JSON.stringify(value.deliveryPlan);
+    if (deliveryPlan && incomingKey !== planKey) invalidate('geometry-changed');
+    else if (!deliveryPlan) { deliveryPlan = value.deliveryPlan; planKey = incomingKey; }
+  }
   if (viewKey !== nextKey || !view) {
     viewKey = nextKey; readyKey = ''; lastFrame = null;
     try {
@@ -26,7 +52,7 @@ function update(value) {
       else view = new RitualBurn.BurnView(container, value.metadata || {}, { fontCoverage: coverage });
       const preparedView = view;
       Promise.resolve(view.ready).then(() => {
-        if (view !== preparedView || viewKey !== nextKey || keyFor(latest) !== nextKey) return;
+        if (closed || cancelledKey === nextKey || view !== preparedView || viewKey !== nextKey || keyFor(latest) !== nextKey) return;
         readyKey = nextKey;
         if (latest.presentationPreparing) fuHost.reportReady({ runId: latest.runId, token: latest.presentationToken, status: 'ready' });
         else render();
@@ -40,8 +66,18 @@ function update(value) {
 }
 fuHost.subscribe(update);
 fuHost.initial().then(value => { if (value) { coverage = value.coverage; update(value.snapshot); } });
-document.addEventListener('visibilitychange', () => { stop(); render(); });
-addEventListener('pagehide', () => { stop(); view?.dispose?.(); });
+document.addEventListener('visibilitychange', () => {
+  stop();
+  if (document.hidden && latest?.visible && !latest.presentationPreparing && cancelledKey !== viewKey) {
+    // Native host hide and its terminal IPC copy can arrive in either order.
+    // Use the uncapped elapsed projection even though hidden rendering is still.
+    const elapsed = latest.elapsedMs + Math.max(0, performance.now() - received);
+    if (elapsed >= naturalEnd()) finishNaturally();
+    else invalidate('document-hidden');
+  }
+  render();
+});
+addEventListener('pagehide', () => { invalidate('pagehide'); closed = true; stop(); view?.dispose?.(); });
 function report() {
   if (!lastFrame || !view) return;
   const interval = latest?.diagnosticsEnabled && !document.hidden && !latest.hidden ? 100 : 1000;
