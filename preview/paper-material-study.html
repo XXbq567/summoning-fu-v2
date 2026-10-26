@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>取纸 · 落墨 · 焚化 — 材质设计研究</title>
+  <style>
+    @font-face { font-family: FuBrush; src: url('../assets/fonts/MaShanZheng-Regular.ttf') format('truetype'); font-display: block; }
+    :root { color-scheme: dark; --bg:#171917; --muted:#969c91; --line:#363a32; --paper:#eee6d2; --accent:#d5b77d; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--paper); font-family:'Microsoft YaHei','Segoe UI',sans-serif; }
+    button,select,input { font:inherit; }
+    button,select { color:var(--paper); border:1px solid #515548; background:#282c25; border-radius:6px; padding:9px 14px; }
+    button { cursor:pointer; }
+    button:hover { border-color:var(--accent); background:#34392d; }
+    button:focus-visible,select:focus-visible,input:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+    button:disabled { opacity:.5; cursor:wait; }
+    .shell { max-width:1260px; margin:0 auto; padding:24px 28px 18px; height:100vh; display:flex; flex-direction:column; }
+    header { display:flex; align-items:flex-end; justify-content:space-between; gap:20px; margin-bottom:18px; flex-shrink:0; }
+    h1 { margin:0 0 7px; font-family:FuBrush,'SimSun',serif; font-weight:400; font-size:34px; letter-spacing:3px; }
+    .eyebrow { color:var(--accent); font-size:11px; letter-spacing:3px; margin-bottom:8px; }
+    header p { margin:0; color:var(--muted); font-size:12px; line-height:1.7; }
+    .status { text-align:right; flex-shrink:0; color:var(--muted); font-size:12px; line-height:1.8; }
+    .status strong { color:var(--paper); font-weight:400; font-variant-numeric:tabular-nums; font-size:16px; }
+    .stage { position:relative; flex:1; min-height:240px; overflow:hidden; border:1px solid var(--line); border-radius:14px; background:radial-gradient(ellipse at 48% 38%,#292d25 0,#22261f 48%,#1e211c 100%); }
+    .stage-label { position:absolute; top:16px; left:20px; z-index:5; color:#777f70; font-size:11px; letter-spacing:2px; pointer-events:none; }
+    .stage-note { position:absolute; top:16px; right:20px; z-index:5; color:#8f9787; font-size:11px; pointer-events:none; }
+    .composer { position:absolute; left:14%; right:5%; bottom:20px; height:52px; border:1px solid #4a5041; border-radius:12px; background:#24291f; display:flex; align-items:center; justify-content:space-between; padding:6px 7px 6px 16px; color:#777f70; font-size:12px; }
+    #send { border-color:#6f765b; background:#d0ba88; color:#252b1d; padding:8px 12px; min-width:105px; }
+    #surface { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+    #flat { position:absolute; pointer-events:none; display:none; }
+    #flat svg { width:100%; height:100%; overflow:visible; display:block; }
+    .caption { display:flex; justify-content:space-between; align-items:flex-start; gap:24px; min-height:51px; padding:12px 2px 8px; }
+    #phase { color:var(--accent); font-size:14px; min-width:100px; }
+    #description { color:#adb3a3; font-size:12px; line-height:1.6; text-align:right; }
+    .controls { display:flex; align-items:center; gap:10px; border-top:1px solid var(--line); padding-top:12px; }
+    .controls button,.controls select { font-size:12px; padding:8px 13px; }
+    .controls input { flex:1; min-width:80px; accent-color:var(--accent); }
+    .keyframes { display:flex; gap:7px; }
+    .keyframes button { background:transparent; border-color:var(--line); color:#b6bdac; }
+    .fineprint { color:#737d69; font-size:11px; margin:12px 0 0; line-height:1.5; }
+    a { color:#bba67b; }
+    @media(max-width:850px) { .shell{padding:18px 14px;} .keyframes{display:none;} .stage{min-height:470px;height:calc(100vh - 285px);} header{align-items:flex-start;} h1{font-size:28px;} .status{font-size:10px;} .stage-note{display:none;} }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div><div class="eyebrow">纸张材质研究 · 设计评审样机</div><h1>取纸 · 落墨 · 焚化</h1><p>纸头先行，卷体后随；展平之后，才让字落下来。</p></div>
+      <div class="status">尚未接入真实发送<br><strong id="clock">0.00 / 12.50 s</strong></div>
+    </header>
+    <section class="stage" id="stage" aria-label="独立材质研究画布">
+      <span class="stage-label">仅此页的示例按钮</span><span class="stage-note">暖纸与原符体 · 不改真实应用</span>
+      <div class="composer"><span>此处不收集输入，只演示取纸的起点。</span><button id="send" disabled>示例发送 ↗</button></div>
+      <canvas id="surface" aria-label="空纸卷舒"></canvas><div id="flat"></div>
+    </section>
+    <div class="caption"><span id="phase">准备纸张</span><span id="description">正在加载本地纸纹与字体。</span></div>
+    <div class="controls">
+      <button id="replay" disabled>重播</button><button id="pause" disabled>暂停</button>
+      <select id="speed" aria-label="播放速度"><option value="1">正常速度</option><option value="0.5">0.5 倍慢放</option><option value="0.25">0.25 倍细看</option></select>
+      <input id="seek" type="range" min="0" max="12500" value="0" step="10" aria-label="查看动画时间">
+      <div class="keyframes"><button data-time="180">取纸</button><button data-time="1100">卷舒</button><button data-time="3000">落墨</button><button data-time="10600">焚化</button></div>
+    </div>
+    <p class="fineprint">设计研究，不是产品验收。空纸采用自有局部卷曲映射；平纸后显示项目原 SVG。准确字形逐渐显露，不宣称任意汉字逐笔笔顺。<a href="../docs/SEND-PAPER-MATERIAL-DESIGN-2026-10-23.md">时序与一手参考</a></p>
+  </main>
+  <script src="../renderer/ritual-core.js"></script><script src="../renderer/burn-view.js"></script>
+  <script>
+  (() => {
+    'use strict';
+    // Design-only controller. No host bridge, observation, IPC, network or storage.
+    const $ = id => document.getElementById(id);
+    const stage = $('stage'), canvas = $('surface'), ctx = canvas.getContext('2d'), flat = $('flat');
+    const TIMES = Object.freeze({ paper:1950, full:4150, burn:9150, ash:12150, end:12500 });
+    const P = Object.freeze({ width:264, length:710 });
+    const clamp = x => Math.max(0,Math.min(1,x));
+    const smooth = x => { x=clamp(x); return x*x*(3-2*x); };
+    const mix = (a,b,t) => a+(b-a)*t;
+    const metadata = {
+      model:'灵思成章',harness:'本地设计研究',environment:'独立样机',reasoning:'专注',
+      sources:{model:'demo',harness:'demo',environment:'demo',reasoning:'demo'},
+      presentation:{mode:'entrance',sessionId:'paper-study',chatTitle:{value:'取纸落墨 · 材质研究',source:'demo'}}
+    };
+    const view = new RitualBurn.BurnView(flat,metadata);
+    const svgNS='http://www.w3.org/2000/svg';
+    const silhouette=document.createElementNS(svgNS,'clipPath');
+    silhouette.setAttribute('id','study-paper-silhouette');silhouette.setAttribute('clipPathUnits','userSpaceOnUse');
+    const outline=document.createElementNS(svgNS,'path');outline.setAttribute('d',view.paperBase.querySelector('path').getAttribute('d'));silhouette.append(outline);view.svg.querySelector('defs').append(silhouette);
+    view.rims.setAttribute('clip-path','url(#study-paper-silhouette)');
+    const lip=document.createElementNS(svgNS,'g');
+    lip.setAttribute('mask','url(#ritual-burn-mask)'); lip.setAttribute('clip-path','url(#study-paper-silhouette)');
+    const lipBody=document.createElementNS(svgNS,'path'), lipLight=document.createElementNS(svgNS,'path');
+    lipBody.setAttribute('fill','#a08b64'); lipBody.setAttribute('fill-opacity','.72');
+    lipLight.setAttribute('fill','none'); lipLight.setAttribute('stroke','#e3d1a6'); lipLight.setAttribute('stroke-width','1.1'); lipLight.setAttribute('opacity','.75');
+    lip.append(lipBody,lipLight); view.svg.insertBefore(lip,view.rims);
+    let texture, geometry, dpr=1, paused=true, baseTime=0, startTime=0, speed=1, raf=0, holdTimer=0, ready=false;
+    let renderCount=0, paperDrawCount=0, naturalRunId=0, lastFrame=null;
+    const phaseAt = t => t<TIMES.paper?'paper':t<TIMES.full?'writing':t<TIMES.burn?'hold':t<TIMES.ash?'burning':t<TIMES.end?'ash':'hidden';
+    function measure() {
+      const r=stage.getBoundingClientRect(), button=$('send').getBoundingClientRect();
+      dpr=Math.min(window.devicePixelRatio||1,2);
+      canvas.width=Math.round(r.width*dpr); canvas.height=Math.round(r.height*dpr);
+      const height=Math.min(624,r.height*.82), unit=height/760, width=360*unit;
+      geometry={width:r.width,height:r.height,unit,target:{x:(r.width-width)/2,y:r.height*.48-375*unit,width,height},origin:{x:button.x-r.x+button.width/2,y:button.y-r.y+button.height/2}};
+      Object.assign(flat.style,{left:geometry.target.x+'px',top:geometry.target.y+'px',width:width+'px',height:height+'px'});
+    }
+    function path(points) { ctx.beginPath(); points.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)); ctx.closePath(); }
+    function triangle(src,dst) {
+      const u1=src[1].x-src[0].x,v1=src[1].y-src[0].y,u2=src[2].x-src[0].x,v2=src[2].y-src[0].y;
+      const x1=dst[1].x-dst[0].x,y1=dst[1].y-dst[0].y,x2=dst[2].x-dst[0].x,y2=dst[2].y-dst[0].y;
+      const det=u1*v2-u2*v1;
+      if(Math.abs(det)<1e-7) return;
+      const a=(x1*v2-x2*v1)/det,b=(y1*v2-y2*v1)/det,c=(u1*x2-u2*x1)/det,d=(u1*y2-u2*y1)/det;
+      // Expand clip edges along their normals, not radially from the centroid:
+      // long thin triangles otherwise keep diagonal antialias cracks.
+      const orientation=Math.sign(x1*y2-y1*x2)||1;
+      const edges=dst.map((p,i)=>{const q=dst[(i+1)%3],dx=q.x-p.x,dy=q.y-p.y,len=Math.hypot(dx,dy)||1;return {x:p.x+dy/len*orientation*.65,y:p.y-dx/len*orientation*.65,dx,dy};});
+      const expanded=dst.map((_p,i)=>{const p=edges[(i+2)%3],q=edges[i],cross=p.dx*q.dy-p.dy*q.dx;if(Math.abs(cross)<1e-7)return dst[i];const k=((q.x-p.x)*q.dy-(q.y-p.y)*q.dx)/cross;return {x:p.x+p.dx*k,y:p.y+p.dy*k};});
+      ctx.save();path(expanded);ctx.clip();ctx.transform(a,b,c,d,dst[0].x-a*src[0].x-c*src[0].y,dst[0].y-b*src[0].x-d*src[0].y);ctx.drawImage(texture,0,0);ctx.restore();
+    }
+    function texturedQuad(points,s0,s1,shade=0,back=false) {
+      const uv=[{x:48,y:20+s0},{x:312,y:20+s0},{x:312,y:20+s1},{x:48,y:20+s1}];
+      triangle([uv[0],uv[1],uv[2]],[points[0],points[1],points[2]]);
+      triangle([uv[0],uv[2],uv[3]],[points[0],points[2],points[3]]);
+      if(shade>0) { ctx.save();path(points);ctx.fillStyle=back?`rgba(114,94,62,${shade})`:`rgba(97,76,42,${shade})`;ctx.fill();ctx.restore(); }
+    }
+    function drawPaper(t) {
+      paperDrawCount++;
+      const {unit,target,origin}=geometry;
+      const flight=smooth((t-120)/730), opening=smooth((t-280)/1420), front=P.length*opening, remaining=P.length-front;
+      const radius=Math.min(34-12*opening,remaining/Math.PI);
+      const yaw=(1-smooth((t-90)/950))*86*Math.PI/180;
+      const pitch=(1-smooth(t/1700))*.075;
+      const turn=(1-smooth(t/1450))*(-.21);
+      const dx=target.x+180*unit-origin.x,dy=target.y+20*unit-origin.y;
+      const bend=Math.sin(Math.PI*flight)*.028;
+      const anchor={x:origin.x+dx*flight-dy*bend,y:origin.y+dy*flight+dx*bend};
+      const settle=clamp((t-1700)/250),tailWave=8*Math.pow(1-settle,2)*Math.sin(settle*Math.PI*2);
+      function project(x,y,z) {
+        const rx=x*Math.cos(yaw)+z*Math.sin(yaw),rz=-x*Math.sin(yaw)+z*Math.cos(yaw);
+        const ry=y*Math.cos(pitch)-rz*Math.sin(pitch),depth=y*Math.sin(pitch)+rz*Math.cos(pitch);
+        const perspective=1200/(1200+depth);
+        const px=rx*perspective,py=ry*perspective;
+        return {x:anchor.x+(px*Math.cos(turn)-py*Math.sin(turn))*unit,y:anchor.y+(px*Math.sin(turn)+py*Math.cos(turn))*unit,depth};
+      }
+      function flatPoint(x,s) { return project(x,s,tailWave*Math.pow(s/P.length,4)*Math.sin(s/P.length*Math.PI*1.4)); }
+      function curlPoint(x,theta) { return project(x,front+radius*Math.sin(theta),radius*(1-Math.cos(theta))); }
+      ctx.globalAlpha=smooth(t/120);
+      // Plane and moving contact shadow use material coordinates; the shadow
+      // disappears as the last curled length reaches zero.
+      if(front>0) for(let i=0;i<8;i++) {
+        const s0=front*i/8,s1=front*(i+1)/8;
+        texturedQuad([flatPoint(-132,s0),flatPoint(132,s0),flatPoint(132,s1),flatPoint(-132,s1)],s0,s1);
+      }
+      if(front>12 && radius>.1) {
+        const q=[flatPoint(-128,Math.max(0,front-radius*1.6)),flatPoint(128,Math.max(0,front-radius*1.6)),flatPoint(128,front),flatPoint(-128,front)];
+        const a=flatPoint(0,Math.max(0,front-radius*1.6)),b=flatPoint(0,front);
+        const gradient=ctx.createLinearGradient(a.x,a.y,b.x,b.y);gradient.addColorStop(0,'rgba(70,51,25,0)');gradient.addColorStop(1,'rgba(70,51,25,.21)');
+        path(q);ctx.fillStyle=gradient;ctx.fill();
+      }
+      if(radius>.01) {
+        const bands=[];
+        for(let i=0;i<24;i++) {
+          const a=i*Math.PI/24,b=(i+1)*Math.PI/24,m=(a+b)/2;
+          const points=[curlPoint(-132,a),curlPoint(132,a),curlPoint(132,b),curlPoint(-132,b)];
+          bands.push({points,s0:front+a*radius,s1:front+b*radius,depth:points.reduce((n,p)=>n+p.depth,0)/4,normal:Math.cos(m)});
+        }
+        bands.sort((a,b)=>b.depth-a.depth);
+        for(const band of bands) texturedQuad(band.points,band.s0,band.s1,band.normal<0?.12+(-band.normal)*.18:(1-band.normal)*.14,band.normal<0);
+        const edge=[curlPoint(-129,Math.PI*.51),curlPoint(129,Math.PI*.51)];
+        ctx.beginPath();ctx.moveTo(edge[0].x,edge[0].y);ctx.lineTo(edge[1].x,edge[1].y);ctx.strokeStyle='rgba(255,251,225,.72)';ctx.lineWidth=.7;ctx.stroke();
+      }
+      ctx.globalAlpha=1;
+    }
+    function circle(cx,cy,r) { return r<=0?'':`M${cx+r} ${cy} A${r} ${r} 0 1 1 ${cx-r} ${cy} A${r} ${r} 0 1 1 ${cx+r} ${cy} Z`; }
+    function drawBurnLip(burn,t) {
+      if(burn<=0||burn>=1) {lipBody.setAttribute('d','');lipLight.setAttribute('d','');return;}
+      const points=Array.from({length:41},(_,i)=>{
+        const x=36+i*7.2;
+        const y=754-burn*778+(304-x)*.42*(1-smooth(burn/.25))+Math.sin(x*.16+4)*3.4+Math.sin(x*.48)*1.5;
+        return {x,y};
+      });
+      const edge='M'+points.map(p=>`${p.x} ${p.y}`).join(' L');
+      const hole=circle(282,708,Math.min(35,burn/.1*35));
+      view.cut.setAttribute('d',edge+' L340 790 L24 790 Z '+hole);
+      for(const el of [view.char,view.glow,view.hot]) el.setAttribute('d',edge+' '+hole);
+      const curl=points.map(p=>({x:p.x,y:p.y-3.5-Math.sin(p.x*.035+t*.002)*1.4}));
+      lipBody.setAttribute('d',edge+' L'+curl.slice().reverse().map(p=>`${p.x} ${p.y}`).join(' L')+' Z');
+      lipLight.setAttribute('d','M'+curl.map(p=>`${p.x} ${p.y}`).join(' L'));
+    }
+    function render(t) {
+      t=Math.max(0,Math.min(TIMES.end,t));renderCount++;
+      const phase=phaseAt(t),writing=clamp((t-TIMES.paper)/(TIMES.full-TIMES.paper)),burn=clamp((t-TIMES.burn)/(TIMES.ash-TIMES.burn));
+      const ashOpacity=phase==='burning'?1:phase==='ash'?1-smooth((t-TIMES.ash)/(TIMES.end-TIMES.ash)):0;
+      ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,geometry.width,geometry.height);
+      canvas.style.display=phase==='paper'?'block':'none';
+      flat.style.display=t>=TIMES.paper&&t<TIMES.end?'block':'none';
+      if(phase==='paper') drawPaper(t);
+      view.render({state:'entrance',writing,burn,variant:'bottom-up',seed:1729,activeMs:t,opacity:t<TIMES.ash?1:0,visualFireActive:phase==='burning',ashOpacity});
+      while(view.ash.children.length>8)view.ash.lastElementChild.remove();
+      drawBurnLip(burn,t);
+      const labels={paper:t<280?'取纸':t<1700?'卷舒':'落稳',writing:'落墨',hold:'完整静置 · 五秒',burning:'焦边 · 卷蚀',ash:'余灰',hidden:'纸尽 · 留白'};
+      const descriptions={paper:'纸头带动，卷体后随。纹理随纸弯曲，余纸仍藏在卷层之后。',writing:'平纸之后，原路径与准确字素依次显露。',hold:'完整符保持五秒，此时纸与墨都不再运动。',burning:'下角先烧穿；薄焦边轻卷，纸和墨由同一遮罩消失。',ash:'纸、墨和火缘已清空，只余几片轻灰。',hidden:'这次召唤结束。重播可查看正常节奏，慢放可看纸面与卷口。'};
+      $('phase').textContent=labels[phase];$('description').textContent=descriptions[phase];
+      $('clock').textContent=`${(t/1000).toFixed(2)} / 12.50 s`;$('seek').value=String(t);
+      lastFrame={elapsedMs:t,phase,writing,burn,ashOpacity,renderCount,paperDrawCount,naturalRunId};
+      return lastFrame;
+    }
+    function currentTime() {return paused?baseTime:Math.min(TIMES.end,baseTime+(performance.now()-startTime)*speed);}
+    function stop() {baseTime=currentTime();paused=true;cancelAnimationFrame(raf);clearTimeout(holdTimer);$('pause').textContent='继续';}
+    function tick() {
+      if(paused)return;
+      const t=currentTime(),frame=render(t);
+      if(t>=TIMES.end){baseTime=TIMES.end;paused=true;$('pause').textContent='重播';return;}
+      if(frame.phase==='hold') holdTimer=setTimeout(()=>{raf=requestAnimationFrame(tick);},Math.max(1,(TIMES.burn-t)/speed));
+      else raf=requestAnimationFrame(tick);
+    }
+    function play(reset=true) {if(!ready)return;stop();if(reset||baseTime>=TIMES.end){baseTime=0;naturalRunId++;}paused=false;startTime=performance.now();$('pause').textContent='暂停';raf=requestAnimationFrame(tick);}
+    function seek(t) {if(!ready)return;stop();baseTime=Math.max(0,Math.min(TIMES.end,Number(t)||0));return render(baseTime);}
+    $('send').addEventListener('click',()=>play());$('replay').addEventListener('click',()=>play());
+    $('pause').addEventListener('click',()=>paused?play(baseTime>=TIMES.end):stop());
+    $('seek').addEventListener('input',event=>seek(event.target.value));
+    $('speed').addEventListener('change',event=>{const running=!paused;stop();speed=Number(event.target.value);if(running)play(false);});
+    document.querySelectorAll('[data-time]').forEach(button=>button.addEventListener('click',()=>seek(Number(button.dataset.time))));
+    window.addEventListener('resize',()=>{measure();if(ready)render(currentTime());});
+    const readyPromise=(async()=>{
+      await document.fonts.load('20px FuBrush');await document.fonts.ready;
+      const doc=new DOMParser().parseFromString(RitualCore.buildTalismanSVG(metadata,{idPrefix:'study'}),'image/svg+xml');
+      doc.querySelectorAll('[data-writing-order]').forEach(group=>group.remove());
+      const image=new Image();
+      const loaded=new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=()=>reject(new Error('Local paper texture failed to load'));});
+      image.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(new XMLSerializer().serializeToString(doc.documentElement));
+      await loaded;texture=image;measure();drawPaper(1100);ready=true;
+      for(const id of ['send','replay','pause'])$(id).disabled=false;
+      render(0);return true;
+    })();
+    window.paperMaterialStudy=Object.freeze({ready:readyPromise,play:()=>play(),pause:stop,seek,getState:()=>({...lastFrame,clockMs:currentTime(),paused,fontLoaded:document.fonts.check('20px FuBrush'),ashCount:view.ash.children.length,paperDisplay:getComputedStyle(flat).display,paperOpacity:view.paper.getAttribute('opacity'),visibleGlyphs:view.writingSteps.flatMap(group=>group.steps).filter(step=>step.element.style.visibility==='visible').length,source:'independent-design-study'})});
+    readyPromise.catch(()=>{$('phase').textContent='本地素材未就绪';$('description').textContent='请从项目目录打开此文件，检查本地字体与 renderer 文件是否齐全。';});
+  })();
+  </script>
+</body>
+</html>

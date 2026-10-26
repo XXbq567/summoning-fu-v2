@@ -39,6 +39,8 @@
       this.setMetadata(metadata);
     }
     setMetadata(metadata) {
+      this.material?.dispose();
+      this.disposed = false;
       const parsed = new DOMParser().parseFromString(root.RitualCore.buildTalismanSVG(metadata, { idPrefix: 'ritual' }), 'image/svg+xml');
       if (parsed.querySelector('parsererror')) throw new Error('Invalid talisman SVG');
       this.svg = document.importNode(parsed.documentElement, true);
@@ -70,6 +72,25 @@
         ? root.RitualFontCoverage.report(this.paper.textContent, this.options.fontCoverage)
         : { checked: false, missingFromBrush: [], fallback: 'System font fallback; coverage not inspected' };
       this.prepareWriting(defs);
+      // A fresh generation owns decoded textures and the WebGL scene. Old
+      // preparation may finish, but its disposed session can never draw.
+      const snapshot = JSON.parse(JSON.stringify(metadata || {}));
+      this.material = root.RitualPaperlab?.createView(this.container, { metadata: snapshot, allowDemoProvider: this.options.allowDemoProvider === true }) || null;
+      this.ready = this.material ? this.material.ready.then(() => this)
+        : Promise.reject(Object.assign(new Error('engine-unavailable'), { code: 'engine-unavailable' }));
+      this.ready.catch(() => {});
+    }
+    getPresentationState() {
+      if (this.material) return this.material.getState();
+      return Object.freeze({ engine: 'paperlab', libraryVersion: '0.8.1', effectiveReducedMotion: false, materialReady: false,
+        canvasVisible: false, actualDrawCount: 0, phase: this.lastEntrancePhase || 'hidden', writing: 0, burn: 0,
+        presenceRemaining: null, damageVersion: 0, metadataHash: null, textureHash: null, textureRasterizations: 0,
+        error: this.disposed ? 'disposed' : 'engine-unavailable' });
+    }
+    dispose() {
+      if (this.disposed) return;
+      this.disposed = true; this.material?.dispose();
+      if (this.svg) this.svg.style.display = 'none';
     }
     prepareWriting(defs) {
       let index = 0;
@@ -120,29 +141,42 @@
     }
     renderEntrance(frame, reduced = false) {
       // Presentation expiry never supplies completed/cancelled work semantics.
-      this.render({ ...frame, kind: undefined, state: 'entrance', burn: 0, seed: 0,
-        variant: 'bottom-up', activeMs: 0, opacity: frame.visible ? (reduced ? 1 : frame.opacity) : 0 }, reduced);
+      reduced = reduced || frame.reducedMotion;
+      const geometry = root.RitualSendGeometry && root.RitualSendGeometry.geometryAt(frame, frame.geometry);
+      const visible = !this.disposed && frame.visible && !!geometry;
+      this.lastEntrancePhase = frame.phase;
+      const materialPhase = ['point', 'travel', 'unfold', 'rolling', 'rotating', 'flying', 'staging', 'intake', 'seal-ack', 'seal-exit'].includes(frame.phase);
+      // SVG is the original sharp typography during writing and the entire
+      // hold. Only a fully flat blank sheet hands off to those glyphs.
+      this.render({ ...frame, kind: undefined, state: 'entrance', seed: 0, burn: 0,
+        variant: 'bottom-up', activeMs: frame.elapsedMs,
+        visualFireActive: false,
+        ashOpacity: 0,
+        opacity: visible && !materialPhase ? frame.opacity : 0 }, reduced);
       if (this.paperBase) this.paperBase.setAttribute('opacity', reduced ? 1 : clamp(frame.paperOpacity ?? 1));
-      this.rims.setAttribute('opacity', 0);
-      this.svg.style.transformOrigin = '50% 96%';
-      this.svg.style.transform = reduced ? '' : `translateY(${frame.translateY || 0}px) scale(${frame.scaleX ?? 1}, ${frame.scaleY ?? 1})`;
-      this.svg.style.visibility = frame.visible ? 'visible' : 'hidden';
+      this.svg.style.transform = '';
+      this.svg.style.visibility = visible ? 'visible' : 'hidden';
+      this.svg.style.display = visible && (!materialPhase || reduced) ? '' : 'none';
       this.svg.setAttribute('data-presentation-phase', frame.phase);
+      this.material?.render({ ...frame, visible: visible && !reduced });
     }
     render(frame, reduced = false) {
       if (frame.kind === 'entrance') return this.renderEntrance(frame, reduced);
-      if (this.svg) { this.svg.style.transform = ''; this.svg.style.visibility = 'visible'; }
+      if (frame.state !== 'entrance') this.material?.render({ phase: 'hidden', visible: false, writing: 0, burn: 0 });
+      if (this.svg) { this.svg.style.transform = ''; this.svg.style.visibility = 'visible'; this.svg.style.display = ''; }
       if (this.paperBase) this.paperBase.setAttribute('opacity', 1);
       this.reduced = reduced;
-      const active = frame.state === 'working';
+      const entrance = frame.state === 'entrance';
+      const active = entrance ? frame.visualFireActive === true : frame.state === 'working';
       const showWhole = frame.state === 'completed' || frame.state === 'idle';
       const burn = reduced || showWhole ? 0 : frame.burn;
       const shape = maskGeometry(burn, frame.variant, frame.seed % 10000);
+      const fireActive = active && !reduced && burn > 0 && burn < 1;
       this.cut.setAttribute('d', shape.removed);
       for (const el of [this.char, this.glow, this.hot]) el.setAttribute('d', shape.edge);
-      this.rims.setAttribute('opacity', reduced || showWhole || frame.state === 'cancelled' ? 0 : 1);
-      this.glow.setAttribute('opacity', active ? .9 : 0);
-      this.hot.setAttribute('opacity', active ? .92 : 0);
+      this.rims.setAttribute('opacity', fireActive ? 1 : 0);
+      this.glow.setAttribute('opacity', fireActive ? .9 : 0);
+      this.hot.setAttribute('opacity', fireActive ? .92 : 0);
       this.paper.setAttribute('opacity', frame.state === 'cancelled' ? 0 : frame.state === 'unknown' ? .45 : showWhole ? 1 : Math.max(0, frame.opacity));
       for (const group of this.writingSteps) {
         const amount = reduced || showWhole ? 1 : root.RitualCore.writingProgress(frame.writing, group.order);
@@ -164,12 +198,14 @@
       }
       this.seal.setAttribute('opacity', frame.state === 'completed' ? 1 : 0);
       this.ash.replaceChildren();
-      if (active && !reduced && burn > 0.02 && burn < 0.995) {
+      this.ash.setAttribute('opacity', entrance ? clamp(frame.ashOpacity || 0) * .7 : .7);
+      const residualAsh = entrance && !reduced && burn === 1 && frame.ashOpacity > 0;
+      if ((fireActive && burn > 0.02 && burn < 0.995) || residualAsh) {
         const t = frame.activeMs / 1000;
-        for (let i = 0; i < 10; i++) {
+        for (let i = 0; i < (residualAsh ? 8 : 10); i++) {
           const life = (t * (0.28 + i * .009) + i * .137) % 1;
           const x = 72 + ((i * 73 + frame.seed) % 220) + Math.sin(t + i) * 11;
-          const edgeY = frame.variant === 'bottom-up' ? 750 - burn * 770 : frame.variant === 'top-down' ? 6 + burn * 770 : 620 - i * 48;
+          const edgeY = residualAsh ? 68 + i % 3 * 12 : frame.variant === 'bottom-up' ? 750 - burn * 770 : frame.variant === 'top-down' ? 6 + burn * 770 : 620 - i * 48;
           this.ash.append(node('rect', { x, y: edgeY - life * 78, width: i % 3 ? 1.3 : 2.2, height: 3.2, opacity: (1 - life) * .55, transform: `rotate(${i * 32 + t * 10} ${x} ${edgeY - life * 78})` }));
         }
       }

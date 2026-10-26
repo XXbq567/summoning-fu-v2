@@ -1,0 +1,31 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const file = path.join(__dirname, '../renderer/mesh-clip-bounds.js');
+const clipping = fs.existsSync(file) ? require(file) : null;
+const project = point => ({ x: point.x, y: point.y });
+test('clipped triangle bounds include actual plane intersections when all retained vertices share a row', () => {
+  assert.ok(clipping, 'indexed triangle clipping evidence must exist');
+  const positions = [{ x: -1, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 0, y: 10, z: 0 }];
+  const result = clipping.visibleBounds(positions, [0, 1, 2], point => 5 - point.y, project);
+  assert.deepEqual(result.bounds, { x: -1, y: 0, width: 2, height: 5 });
+  assert.equal(result.retainedVertexCount, 2);
+  assert.equal(result.intersectionCount, 2);
+  assert.equal(result.source, 'cpu-clipped-indexed-triangles');
+});
+test('shared triangle edges contribute one intersection and fully clipped geometry contributes no bounds', () => {
+  assert.ok(clipping, 'indexed triangle clipping evidence must exist');
+  const positions = [{ x: -1, y: 0, z: 2 }, { x: 1, y: 0, z: 2 }, { x: 1, y: 10, z: 4 }, { x: -1, y: 10, z: 4 }];
+  const indices = new Uint16Array([0, 1, 2, 0, 2, 3]);
+  const projected = point => ({ x: point.x + point.z, y: 2 * point.y - point.z });
+  const cut = clipping.visibleBounds(positions, indices, point => 5 - point.y, projected);
+  assert.equal(cut.retainedVertexCount, 2); assert.equal(cut.intersectionCount, 3);
+  assert.deepEqual(cut.bounds, { x: 1, y: -2, width: 3, height: 9 });
+  const gone = clipping.visibleBounds(positions, indices, () => -1, project);
+  assert.equal(gone.bounds, null); assert.equal(gone.retainedVertexCount, 0); assert.equal(gone.intersectionCount, 0);
+  const intact = clipping.visibleBounds(positions, indices, () => 1, project);
+  assert.deepEqual(intact.bounds, { x: -1, y: 0, width: 2, height: 10 }); assert.equal(intact.intersectionCount, 0);
+  assert.throws(() => clipping.visibleBounds(positions, [0, 1, 99], () => 1, project), /index/);
+});

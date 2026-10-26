@@ -1,33 +1,63 @@
 /* One-shot chat entrance presentation. Expiry is not a task lifecycle event. */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.RitualEntrance = factory();
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./delivery-motion.js'));
+  else root.RitualEntrance = factory(root.RitualDelivery);
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (Delivery) {
   'use strict';
-  const timings = Object.freeze({ paperMs: 650, paperEndMs: 650, writingMs: 2100, writingEndMs: 2750,
-    sealEndMs: 3000, holdStartMs: 3000, holdMs: 10000, leaveAtMs: 13000, leaveMs: 1000, totalMs: 14000 });
+  const timings = Object.freeze({ pointEndMs: 120, travelEndMs: 850, paperEndMs: 1950,
+    writingMs: 2200, writingEndMs: 4150, holdStartMs: 4150, holdMs: 2000,
+    leaveAtMs: 6150, deliveryAtMs: 6150, sealAtMs: 5950, sealRevealMs: 200, sealReceiptMs: 200, sealExitMs: 200, deliveryMaxMs: 2600, totalMs: 8750 });
   const clamp = value => Math.max(0, Math.min(1, value));
   const smooth = value => value * value * (3 - 2 * value);
   function frameAt(elapsedMs, reduced = false, options = {}) {
     const elapsed = Math.max(0, Number.isFinite(elapsedMs) ? elapsedMs : timings.totalMs);
-    const hideAtMs = Number.isFinite(options.hideAtMs) ? Math.min(timings.totalMs, Math.max(timings.holdMs, options.hideAtMs)) : reduced ? timings.holdMs : timings.totalMs;
+    const candidate = options.deliveryPlan;
+    const local = options.allowLocalSeal === true && !!options.localSeal;
+    const deliveryPlan = candidate
+      ? (candidate.destination === 'local-generated-seal'
+        ? (local && Delivery?.localSealStillValid(candidate, options.localSeal) ? candidate : null)
+        : (Delivery?.targetStillValid(candidate, options.deliveryTarget || candidate.target, options) ? candidate : null))
+      : local ? Delivery?.createLocalSealPlan(options.geometry, options.localSeal) : Delivery?.createPlan(options.geometry, options.deliveryTarget, options);
+    const localPlan = deliveryPlan?.destination === 'local-generated-seal';
+    const paperEnd = deliveryPlan ? timings.leaveAtMs + deliveryPlan.durationMs : timings.leaveAtMs;
+    const naturalEnd = paperEnd + (localPlan ? timings.sealReceiptMs + timings.sealExitMs : 0);
+    const hideAtMs = Number.isFinite(options.hideAtMs) ? Math.min(naturalEnd, Math.max(timings.holdMs, options.hideAtMs)) : reduced ? timings.holdMs : naturalEnd;
     const visible = elapsed < hideAtMs;
     const holdStartMs = reduced ? hideAtMs - timings.holdMs : timings.holdStartMs;
     const leaveAtMs = reduced ? hideAtMs : timings.leaveAtMs;
-    const leaveProgress = reduced ? 0 : clamp((elapsed - leaveAtMs) / timings.leaveMs);
-    const leavingEase = smooth(leaveProgress);
-    const paperEase = reduced ? 1 : smooth(clamp(elapsed / timings.paperMs));
-    const phase = !visible ? 'hidden' : reduced ? 'hold' : elapsed < timings.paperEndMs ? 'paper'
-      : elapsed < timings.writingEndMs ? 'writing' : elapsed < timings.sealEndMs ? 'seal' : elapsed < leaveAtMs ? 'hold' : 'leaving';
+    const travel = clamp((elapsed - timings.pointEndMs) / (timings.travelEndMs - timings.pointEndMs));
+    const unfold = clamp((elapsed - timings.travelEndMs) / (timings.paperEndMs - timings.travelEndMs));
+    const progress = Object.freeze(reduced ? { travel: 1, stretchX: 1, stretchY: 1 } : {
+      travel: smooth(travel),
+      stretchX: elapsed < timings.travelEndMs ? .22 * smooth(clamp((travel - .3) / .7)) : .22 + .78 * smooth(unfold),
+      stretchY: elapsed < timings.pointEndMs ? .02 * smooth(elapsed / timings.pointEndMs) : .02 + .98 * smooth(travel),
+    });
+    const deliveryState = deliveryPlan && elapsed >= timings.leaveAtMs ? Delivery.sample(deliveryPlan, elapsed - timings.leaveAtMs) : null;
+    const phase = !visible ? 'hidden' : reduced ? 'hold' : elapsed < timings.pointEndMs ? 'point'
+      : elapsed < timings.travelEndMs ? 'travel' : elapsed < timings.paperEndMs ? 'unfold'
+      : elapsed < timings.writingEndMs ? 'writing' : elapsed < leaveAtMs ? 'hold'
+      : localPlan && elapsed >= paperEnd ? (elapsed < paperEnd + timings.sealReceiptMs ? 'seal-ack' : 'seal-exit')
+      : deliveryState?.phase || 'hidden';
+    const sealVisible = visible && !reduced && localPlan && elapsed >= timings.sealAtMs;
+    const reveal = smooth(clamp((elapsed - timings.sealAtMs) / timings.sealRevealMs));
+    const exit = smooth(clamp((elapsed - paperEnd - timings.sealReceiptMs) / timings.sealExitMs));
+    const receipt = clamp((elapsed - paperEnd) / timings.sealReceiptMs);
+    const seal = Object.freeze({ source: 'local-generated-seal', visible: !!sealVisible,
+      phase: !sealVisible ? 'hidden' : elapsed < timings.leaveAtMs ? 'appearing' : elapsed < paperEnd ? 'receiving' : phase === 'seal-ack' ? 'acknowledging' : 'disappearing',
+      rect: localPlan ? deliveryPlan.target.rect : null, center: localPlan ? deliveryPlan.arrival : null,
+      opacity: sealVisible ? reveal * (1 - exit) : 0,
+      scale: .86 + .14 * reveal - .045 * Math.sin(Math.PI * receipt) - .12 * exit,
+      logoRotationZ: 0, ringRotationZ: Math.max(0, Math.min(elapsed, paperEnd) - timings.sealAtMs) / 1000 * .14 });
+    const burn = 0;
     return Object.freeze({
-      kind: 'entrance', elapsedMs: elapsed, visible, burn: 0, reducedMotion: reduced, hideAtMs, holdStartMs, leaveAtMs,
-      phase, leaveProgress, needsAnimation: visible && !reduced && phase !== 'hold',
-      paperOpacity: paperEase,
+      kind: 'entrance', elapsedMs: elapsed, visible, burn, reducedMotion: reduced, hideAtMs, holdStartMs, leaveAtMs,
+      phase, progress, seal, delivery: deliveryPlan ? Object.freeze({ plan: deliveryPlan, state: deliveryState }) : null, visualFireActive: false,
+      needsAnimation: visible && !reduced && (phase !== 'hold' || sealVisible),
+      nextAnimationAtMs: localPlan && elapsed < timings.sealAtMs ? timings.sealAtMs : leaveAtMs,
+      paperOpacity: visible ? 1 : 0,
       writing: reduced ? 1 : clamp((elapsed - timings.paperEndMs) / timings.writingMs),
-      opacity: !visible ? 0 : reduced ? 1 : 1 - leavingEase,
-      scaleX: reduced ? 1 : 1 - leavingEase * .02,
-      scaleY: reduced ? 1 : 1 - leavingEase * .02,
-      translateY: reduced ? 0 : (1 - paperEase) * 8 + leavingEase * 8,
+      opacity: visible ? 1 : 0,
+      ashOpacity: 0,
     });
   }
   function freeze(value) {
@@ -42,7 +72,7 @@
       const snapshot = freeze(JSON.parse(JSON.stringify(metadata)));
       const token = ++this.generation;
       this.lastNow = now;
-      this.current = { id, token, startedAt: now, metadata: snapshot, cancelled: false, reducedMotion: false, hideAtMs: timings.totalMs, expired: false };
+      this.current = { id, token, startedAt: now, metadata: snapshot, cancelled: false, reducedMotion: false, hideAtMs: Infinity, expired: false };
       return token;
     }
     cancel(token) {
@@ -50,7 +80,7 @@
       this.current.cancelled = true;
       return true;
     }
-    snapshot(now, reduced = false) {
+    snapshot(now, reduced = false, options = {}) {
       if (!Number.isFinite(now)) throw new TypeError('Use finite monotonic time for presentation');
       this.lastNow = Math.max(this.lastNow, now);
       const current = this.current;
@@ -59,10 +89,14 @@
         // Once a presentation has become static, retain that preference for this
         // generation. Re-enabling motion cannot erase lettering or extend it.
         current.reducedMotion = true;
-        const fullAt = Math.min(timings.sealEndMs, elapsed);
+        const fullAt = Math.min(timings.holdStartMs, elapsed);
         current.hideAtMs = Math.min(current.hideAtMs, fullAt + timings.holdMs);
       }
-      const frame = frameAt(elapsed, current ? current.reducedMotion : reduced, current || {});
+      const frame = frameAt(elapsed, current ? current.reducedMotion : reduced, { ...(current || {}), ...options });
+      // A cancelled generation cannot remain visible just because its local
+      // receipt/fade extends beyond the legacy external-target deadline.
+      if (!current || current.cancelled || current.expired) return Object.freeze({ ...frame, visible: false, phase: 'hidden', needsAnimation: false,
+        opacity: 0, paperOpacity: 0, seal: Object.freeze({ ...frame.seal, visible: false, opacity: 0, phase: 'hidden' }), id: current?.id || null, token: current?.token || null, metadata: current?.metadata || null });
       if (current && !frame.visible) current.expired = true;
       return Object.freeze({ ...frame, id: current ? current.id : null, token: current ? current.token : null, metadata: current ? current.metadata : null });
     }

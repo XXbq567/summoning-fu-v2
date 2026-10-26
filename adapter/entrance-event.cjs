@@ -4,6 +4,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const os = require('node:os');
 const { metadataFor, safeText, idOK } = require('./envelope.cjs');
+const { verifyPaginatedEntrance, verificationAnchor } = require('./paginated-state.cjs');
 const MAX_EVENT_BYTES = 65536;
 const EVENT_TTL_MS = 120000;
 const MAX_SESSION_HEADER_BYTES = 1024 * 1024;
@@ -99,6 +100,8 @@ async function readEntranceFile(file, { dataRoot, now = Date.now(), onDiagnostic
   finally { await handle?.close().catch(() => {}); }
 }
 async function verifyEntranceTurn(event, { codexHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), now = Date.now() } = {}) {
+  const paginated = await verifyPaginatedEntrance(event, { codexHome, now });
+  if (paginated.applicable === true || event?.transcriptPath == null) return paginated;
   let handle;
   const no = reason => ({ verified: false, reason });
   try {
@@ -153,13 +156,20 @@ async function verifyEntranceTurn(event, { codexHome = process.env.CODEX_HOME ||
     if (latest.startedAtMs == null) return no('source-time-unavailable');
     if (now - latest.startedAtMs > EVENT_TTL_MS || latest.startedAtMs - now > 5000) return no('source-expired');
     const reasoning = context && !contextInvalid ? context : { value: null, source: 'unknown', model: null, contextOffset: null };
-    return { verified: true, sessionId: meta.id, ...latest, reasoning, contextMissing: !contextSeen };
+    return { verified: true, sourceKind: 'codex-rollout', sessionId: meta.id, ...latest, reasoning, contextMissing: !contextSeen };
   } catch { return no('source-unavailable'); }
   finally { await handle?.close().catch(() => {}); }
 }
 function applyVerifiedReasoning(event, verification) {
   const v = verification, r = v?.reasoning;
-  const valid = v?.verified === true && v.sessionId === event?.sessionId && v.turnId === event?.turnId && r?.source === 'reported' && REASONING_EFFORTS.has(r.value) && event.provenance?.model === 'reported' && r.model === event.metadata?.model && Number.isSafeInteger(v.offset) && Number.isSafeInteger(r.contextOffset) && r.contextOffset > v.offset;
-  return { ...event, metadata: { ...event?.metadata, reasoning: valid ? r.value : null }, provenance: { ...event?.provenance, reasoning: valid ? 'reported' : 'unknown' } };
+  const sameTurn = v?.verified === true && v.sessionId === event?.sessionId && v.turnId === event?.turnId;
+  const reported = sameTurn && (v.sourceKind == null || v.sourceKind === 'codex-rollout') && r?.source === 'reported' && REASONING_EFFORTS.has(r.value) && event.provenance?.model === 'reported' && r.model === event.metadata?.model && Number.isSafeInteger(v.offset) && Number.isSafeInteger(r.contextOffset) && r.contextOffset > v.offset;
+  const configured = sameTurn && v.sourceKind === 'codex-paginated-metadata' && !!verificationAnchor(v)
+    && r?.source === 'configured' && r.storageSource === 'codex-thread-config' && r.sessionId === event.sessionId
+    && REASONING_EFFORTS.has(r.value) && r.model === null && r.contextOffset === null
+    && Number.isSafeInteger(r.observedAt) && r.observedAt >= 0 && r.observedAt <= 8640000000000000
+    && r.observedAt >= v.startedAtMs - 5000 && r.observedAt - v.startedAtMs <= EVENT_TTL_MS;
+  const source = reported ? 'reported' : configured ? 'configured' : 'unknown';
+  return { ...event, metadata: { ...event?.metadata, reasoning: source === 'unknown' ? null : r.value }, provenance: { ...event?.provenance, reasoning: source } };
 }
 module.exports = { createEntranceEvent, validateEntranceEvent, readEntranceFile, verifyEntranceTurn, applyVerifiedReasoning, eventIdFor, MAX_EVENT_BYTES, EVENT_TTL_MS, SUPPORTED_CLI_VERSIONS };

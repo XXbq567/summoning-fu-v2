@@ -53,16 +53,16 @@ test('renderer evidence only retains bounded numeric visual state, never task te
 
 test('normal entrance retains full motion when system preference is enabled or changes mid-run', () => {
   const { entranceMotionPolicy } = require('../desktop/host-state.cjs');
-  const { EntranceTimeline } = require('../renderer/entrance-timeline.js');
+  const { EntranceTimeline, timings } = require('../renderer/entrance-timeline.js');
   assert.equal(typeof entranceMotionPolicy, 'function');
   const timeline = new EntranceTimeline(); timeline.trigger('normal-hook', 0, {});
-  for (const [time, system, phase] of [[325, true, 'paper'], [1700, false, 'writing'], [5000, true, 'hold'], [13500, true, 'leaving']]) {
+  for (const [time, system, phase] of [[(timings.pointEndMs + timings.travelEndMs) / 2, true, 'travel'], [(timings.travelEndMs + timings.paperEndMs) / 2, true, 'unfold'], [(timings.paperEndMs + timings.writingEndMs) / 2, false, 'writing'], [timings.holdStartMs + timings.holdMs / 2, true, 'hold'], [timings.leaveAtMs, true, 'hidden']]) {
     const policy = entranceMotionPolicy(system);
     assert.equal(policy.systemReducedMotion, system); assert.equal(policy.effectiveReducedMotion, false);
     const frame = timeline.snapshot(time, policy.effectiveReducedMotion);
-    assert.equal(frame.phase, phase); assert.equal(frame.hideAtMs, 14000); assert.equal(frame.reducedMotion, false);
+    assert.equal(frame.phase, phase); assert.equal(frame.hideAtMs, timings.leaveAtMs); assert.equal(frame.reducedMotion, false);
   }
-  assert.equal(timeline.snapshot(14000, entranceMotionPolicy(true).effectiveReducedMotion).visible, false);
+  assert.equal(timeline.snapshot(timings.totalMs, entranceMotionPolicy(true).effectiveReducedMotion).visible, false);
 });
 
 test('normal renderer evidence distinguishes system preference and actual policy and bounds DOM values', () => {
@@ -77,14 +77,19 @@ test('normal renderer evidence distinguishes system preference and actual policy
 test('latest explicit send replaces pending entrance and stale callbacks cannot consume it', () => {
   const scheduler = new EntranceScheduler();
   const first = scheduler.queue({ eventId: 'e1', sessionId: 's1', turnId: 't1', createdAt: '2026-10-21T00:00:00Z' }, 0);
-  assert.equal(scheduler.take(first, 4999), null);
   const second = scheduler.queue({ eventId: 'e2', sessionId: 's1', turnId: 't2', createdAt: '2026-10-21T00:00:01Z' }, 1000);
-  assert.equal(scheduler.take(first, 5000), null);
+  assert.equal(scheduler.take(first, 1000), null);
   assert.equal(scheduler.queue({ eventId: 'e2', sessionId: 's1', turnId: 't2', createdAt: '2026-10-21T00:00:01Z' }, 2000), null);
-  assert.equal(scheduler.take(second, 5999), null);
-  assert.equal(scheduler.take(second, 6000).turnId, 't2');
-  assert.equal(scheduler.take(second, 6001), null);
+  assert.equal(scheduler.take(second, 1000).turnId, 't2');
+  assert.equal(scheduler.take(second, 1001), null);
   assert.equal(scheduler.isCurrent(first), false);
+});
+test('verified source context wait is limited to 750ms and never imposes a fixed takeoff delay', async () => {
+  const { verifyEntranceUntil } = require('../desktop/host-state.cjs');
+  let now = 0, calls = 0;
+  const result = await verifyEntranceUntil({ verify: async () => { calls++; return { verified: true, contextMissing: true }; }, now: () => now, wait: async ms => { now += ms; }, deadline: 5000, waitForContext: true });
+  assert.equal(result.verified, true); assert.equal(result.contextMissing, true);
+  assert.equal(now, 750); assert.equal(calls, 4);
 });
 test('entrance size grows thirty percent, retains aspect and clamps on small displays', () => {
   const large = entranceBounds(null, { x: 0, y: 0, width: 2048, height: 1152 });
@@ -188,4 +193,50 @@ test('reasoning evidence keeps only supported reported enum with a safe source o
   const { sanitizeReasoningEvidence } = require('../desktop/host-state.cjs');
   assert.deepEqual(sanitizeReasoningEvidence({ value: 'xhigh', source: 'reported', contextOffset: 50000, prompt: 'secret' }), { value: 'xhigh', source: 'reported', contextOffset: 50000 });
   for (const value of [{ value: 'secret/path', source: 'reported', contextOffset: 4 }, { value: 'high', source: 'configured', contextOffset: 4 }, { value: 'high', source: 'reported', contextOffset: Infinity }]) assert.deepEqual(sanitizeReasoningEvidence(value), { value: null, source: 'unknown', contextOffset: null });
+});
+
+test('Paperlab telemetry retains only bounded draw and damage evidence, never arbitrary errors or task data', () => {
+  const { sanitizePaperlabEvidence } = require('../desktop/host-state.cjs');
+  const input = { engine: 'paperlab', libraryVersion: '0.8.1', effectiveReducedMotion: false, materialReady: true, canvasVisible: true, actualDrawCount: 6, phase: 'burning', writing: 1, burn: .3, presenceRemaining: .7, damageVersion: 8, metadataHash: '0123abcd', textureHash: '4567abcd', textureRasterizations: 2, error: null, prompt: 'private' };
+  const result = sanitizePaperlabEvidence(input);
+  assert.equal(result.engine, 'paperlab'); assert.equal(result.prompt, undefined);
+  assert.equal(result.effectiveReducedMotion, false);
+  assert.equal(sanitizePaperlabEvidence({ ...input, effectiveReducedMotion: true }), null);
+  assert.equal(sanitizePaperlabEvidence({ ...input, error: 'C:\\private\\provider exception' }), null);
+  assert.equal(sanitizePaperlabEvidence({ ...input, actualDrawCount: -1 }), null);
+  assert.equal(sanitizePaperlabEvidence({ ...input, presenceRemaining: 1.1 }), null);
+  assert.equal(sanitizePaperlabEvidence({ ...input, metadataHash: 'private text' }), null);
+});
+test('Paperlab fire telemetry keeps only bounded emitted flame evidence and a fixed color pipeline', () => {
+  const { sanitizePaperlabEvidence } = require('../desktop/host-state.cjs');
+  const input = { engine: 'paperlab', libraryVersion: '0.8.1', materialReady: true, canvasVisible: true, actualDrawCount: 6, phase: 'burning', writing: 1, burn: .3, presenceRemaining: .7, damageVersion: 8, metadataHash: '0123abcd', textureHash: '4567abcd', textureRasterizations: 2, error: null,
+    flameCount: 5, maxFlameHeightDIP: 20, colorPipeline: 'srgb-no-tone-mapping' };
+  const result = sanitizePaperlabEvidence(input);
+  assert.equal(result.flameCount, 5); assert.equal(result.maxFlameHeightDIP, 20); assert.equal(result.colorPipeline, 'srgb-no-tone-mapping');
+  for (const change of [{ flameCount: 17 }, { flameCount: 1.5 }, { maxFlameHeightDIP: 51 }, { maxFlameHeightDIP: Infinity }, { colorPipeline: 'private' }]) assert.equal(sanitizePaperlabEvidence({ ...input, ...change }), null);
+});
+test('independent Pet outset preserves the paper anchor and leaves the shared flame envelope inside its native window', () => {
+  const { independentPetLayout } = require('../desktop/host-state.cjs');
+  const { burnOutsetDIP } = require('../renderer/send-geometry.js');
+  assert.equal(burnOutsetDIP, 56);
+  const saved = { x: 300, y: 200 }, area = { x: 0, y: 0, width: 1600, height: 1100 };
+  const layout = independentPetLayout(saved, area), target = layout.geometry.targetRect;
+  assert.equal(layout.bounds.x + target.x, saved.x); assert.equal(layout.bounds.y + target.y, saved.y);
+  assert.equal(target.width, 320); assert.equal(target.height, 676);
+  assert.ok(target.x >= burnOutsetDIP && target.y >= burnOutsetDIP);
+  assert.ok(layout.bounds.width - target.x - target.width >= burnOutsetDIP);
+  assert.ok(layout.bounds.height - target.y - target.height >= burnOutsetDIP);
+  assert.deepEqual(saved, { x: 300, y: 200 });
+  for (const workArea of [{ x: -1200, y: 0, width: 1200, height: 800 }, { x: 0, y: 0, width: 600, height: 600 }]) {
+    const one = independentPetLayout({ x: workArea.x, y: workArea.y }, workArea), t = one.geometry.targetRect;
+    assert.ok(one.bounds.x >= workArea.x && one.bounds.y >= workArea.y);
+    assert.ok(one.bounds.x + one.bounds.width <= workArea.x + workArea.width);
+    assert.ok(one.bounds.y + one.bounds.height <= workArea.y + workArea.height);
+    assert.ok(t.x >= burnOutsetDIP && t.y >= burnOutsetDIP);
+    assert.ok(one.bounds.width - t.x - t.width >= burnOutsetDIP - 1e-8);
+    assert.ok(one.bounds.height - t.y - t.height >= burnOutsetDIP - 1e-8);
+    assert.ok(Math.abs(t.width / t.height - 360 / 760) < .001);
+    const next = independentPetLayout({ x: one.bounds.x + t.x, y: one.bounds.y + t.y }, workArea);
+    assert.deepEqual(next, one, 'persisting paper position must not accumulate an outer-window offset');
+  }
 });

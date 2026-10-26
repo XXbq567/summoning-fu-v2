@@ -123,11 +123,15 @@
     const sealMottos = ['如律', '启思', '成章'];
     const relayText = decorativeRelay ? relayMottos[decorationSeed % relayMottos.length] : clip(meta.relay, 22);
     const companyText = decorativeCompany ? sealMottos[decorationSeed % sealMottos.length] : clip(meta.company, 20);
+    const effortNames = { none: '无', minimal: '最低', low: '低', medium: '中', high: '高', xhigh: '极高' };
+    const configuredEffort = meta.sources.reasoning === 'configured';
+    const reasoningText = configuredEffort ? (Object.hasOwn(effortNames, meta.reasoning) ? '配置·' + effortNames[meta.reasoning] : '未取得') : meta.reasoning;
+    const reasoningDescription = configuredEffort ? '线程配置快照，未确认本次任务实际生效。' : '';
     const tilt = ((random() - 0.5) * 1.3).toFixed(3);
     const title = `召唤符 · ${meta.model} · ${meta.task}`;
     const decorationDescription = (decorativeRelay || decorativeCompany || (entrance && meta.presentation.titlePending))
       ? `缺失来源处使用原创题辞装饰，不代表中转站或模型公司。${entrance && meta.presentation.titlePending ? '会话标题尚未取得，所请事项为装饰题辞“新启一程”。' : ''}` : '';
-    const description = `符头中转站：${meta.relay}。模型所属公司：${meta.company}。奉请模型：${meta.model}。执事框架：${meta.harness}。工作环境：${meta.environment}。${entrance ? '会话标题' : '所请事项'}：${meta.fullTask}。推理强度：${meta.reasoning}。${decorationDescription}${entrance ? '这是会话入场展示，展示结束不代表任务完成。' : '这是输入字段的符式排版，燃烧时长不代表 token 数量或任务完成百分比。'}`;
+    const description = `符头中转站：${meta.relay}。模型所属公司：${meta.company}。奉请模型：${meta.model}。执事框架：${meta.harness}。工作环境：${meta.environment}。${entrance ? '会话标题' : '所请事项'}：${meta.fullTask}。推理强度：${reasoningText}。${reasoningDescription}${decorationDescription}${entrance ? '这是会话入场展示，展示结束不代表任务完成。' : '这是输入字段的符式排版，燃烧时长不代表 token 数量或任务完成百分比。'}`;
     const fontData = typeof opts.fontDataURL === 'string' && /^data:(?:font\/(?:ttf|otf|woff|woff2)|application\/(?:x-font-ttf|font-woff));base64,[A-Za-z0-9+/=]+$/.test(opts.fontDataURL) ? opts.fontDataURL : '';
     const fontStyle = fontData ? `<style>@font-face{font-family:'FuBrush';src:url('${fontData}')}text{font-family:${FONT}}</style>` : '';
 
@@ -212,7 +216,7 @@
     const reasoning = `<g id="${id('heart')}" data-writing-order="6" data-writing-name="符胆与推理强度">
       <path d="M125 631 L235 633 L234 696 L123 694Z M129 637 L229 638 L229 689 L129 690Z" fill="${ink}" fill-opacity=".035" stroke="${ink}" stroke-width="1.5"/>
       ${textNode('推 理 强 度', 180, 651, 10, 'letter-spacing="1.4"')}
-      ${textNode(clip(meta.reasoning, 18), 180, 679, fittedFont(clip(meta.reasoning, 18), 25, 92), 'font-weight="600"')}
+      ${textNode(clip(reasoningText, 18), 180, 679, fittedFont(clip(reasoningText, 18), 25, 92), 'font-weight="600"')}
       <path d="M135 700 C158 706 209 701 228 702 L223 707 C193 705 159 711 133 704Z M110 685 C108 698 98 711 87 717 L103 713 C114 705 117 696 116 686Z M251 685 C254 699 263 710 274 717 L259 713 C248 705 244 697 246 686Z" fill="${ink}"/>
     </g>`;
 

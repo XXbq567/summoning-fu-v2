@@ -90,7 +90,7 @@ test('desktop hook plugin uses legacy-only manifest because portable root silent
   const base = path.resolve(__dirname, '../plugin');
   await assert.rejects(fs.stat(path.join(base, 'plugin.json')), { code: 'ENOENT' });
   const legacy = JSON.parse(await fs.readFile(path.join(base, '.codex-plugin/plugin.json'), 'utf8'));
-  assert.equal(legacy.version, '0.4.1'); assert.equal(legacy.hooks, './hooks/hooks.json');
+  assert.equal(legacy.version, JSON.parse(await fs.readFile(path.resolve(__dirname, '../package.json'), 'utf8')).version); assert.equal(legacy.hooks, './hooks/hooks.json');
   assert.equal(legacy.skills, undefined);
   const hooks = JSON.parse(await fs.readFile(path.join(base, 'hooks/hooks.json'), 'utf8'));
   assert.deepEqual(Object.keys(hooks.hooks), ['UserPromptSubmit']);

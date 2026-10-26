@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "assetId": "openai-blossom",
+  "provider": "OpenAI",
+  "sourceUrl": "https://cdn.openai.com/brand/OpenAI-Logos-2025.zip",
+  "archiveEntry": "OpenAI-logos(new)/SVGs/OpenAI-black-monoblossom.svg",
+  "archiveSha256": "b2c4cd1e86bbe76bdc4946a72d014efa455240c177f4878fd68cc9b88c71d2ec",
+  "assetSha256": "7be72f1fea831d3ba81a545cee79b7e0ae69449d5d7837c9571ccbfb4aa1e00b",
+  "assetBytes": 2969,
+  "retrievedAt": "2026-10-24",
+  "brandGuidelines": "https://openai.com/brand/",
+  "licenseKind": "Conditional trademark/brand usage terms; not an open-source artwork license",
+  "unmodified": true
+}

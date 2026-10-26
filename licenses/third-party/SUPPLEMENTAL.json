@@ -1,0 +1,27 @@
+{
+  "@react-three/fiber@9.7.0": [
+    {
+      "path": "licenses/third-party/react-three__fiber-9.7.0/LICENSE.upstream",
+      "sha256": "9c35b5de7b7493a707fffe4eb23bd2f7f449153c1911f7c6eefb4e591fd5349a",
+      "source": "https://raw.githubusercontent.com/pmndrs/react-three-fiber/v9.7.0/LICENSE",
+      "kind": "original-upstream-license"
+    }
+  ],
+  "@esbuild/win32-x64@0.25.12": [
+    {
+      "path": "licenses/third-party/esbuild__win32-x64-0.25.12/LICENSE.esbuild",
+      "sha256": "b40ec5baec7bb34fa5b1c09521fa3cd52d5fad7adafed74932a2010d3612a681",
+      "source": "https://registry.npmjs.org/esbuild/-/esbuild-0.25.12.tgz#package/LICENSE.md",
+      "kind": "same-version-parent-license"
+    }
+  ],
+  "gsap@3.15.0": [
+    {
+      "path": "licenses/third-party/gsap-3.15.0/README.md",
+      "sha256": "66a79667b0538b19634b5a000a9a3debe588c98d390424e73e5d4de847270828",
+      "source": "https://registry.npmjs.org/gsap/-/gsap-3.15.0.tgz#package/README.md",
+      "kind": "published-license-notice",
+      "terms": "https://webflow.com/legal/product-terms"
+    }
+  ]
+}

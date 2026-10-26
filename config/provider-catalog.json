@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "reviewedAt": "2026-10-25",
+  "policy": "Exact current reported model only; aliases, host products, relays and company labels alone cannot select a brand.",
+  "models": {
+    "gpt-6-astra": {
+      "providerId": "openai",
+      "label": "OpenAI",
+      "assetId": "openai-blossom",
+      "evidenceId": "openai-api-model-gpt-6-astra-reviewed-2026-10-25",
+      "evidenceUrl": "https://developers.openai.com/api/docs/models/gpt-6-astra"
+    },
+    "gpt-6.1-sol": {
+      "providerId": "openai",
+      "label": "OpenAI",
+      "assetId": "openai-blossom",
+      "evidenceId": "openai-api-model-gpt-6.1-sol-reviewed-2026-10-24",
+      "evidenceUrl": "https://developers.openai.com/api/docs/models/gpt-6.1-sol"
+    },
+    "gpt-6-sol": {
+      "providerId": "openai",
+      "label": "OpenAI",
+      "assetId": "openai-blossom",
+      "evidenceId": "openai-api-model-gpt-6-sol-reviewed-2026-10-25",
+      "evidenceUrl": "https://developers.openai.com/api/docs/models/gpt-6-sol"
+    },
+    "gpt-6-luna": {
+      "providerId": "openai",
+      "label": "OpenAI",
+      "assetId": "openai-blossom",
+      "evidenceId": "openai-api-model-gpt-6-luna-reviewed-2026-10-25",
+      "evidenceUrl": "https://developers.openai.com/api/docs/models/gpt-6-luna"
+    },
+    "gpt-5.6-sol": {
+      "providerId": "openai",
+      "label": "OpenAI",
+      "assetId": "openai-blossom",
+      "evidenceId": "openai-api-model-gpt-5.6-sol-reviewed-2026-10-25",
+      "evidenceUrl": "https://developers.openai.com/api/docs/models/gpt-5.6-sol"
+    },
+    "gpt-5.6-terra": {
+      "providerId": "openai",
+      "label": "OpenAI",
+      "assetId": "openai-blossom",
+      "evidenceId": "openai-api-model-gpt-5.6-terra-reviewed-2026-10-25",
+      "evidenceUrl": "https://developers.openai.com/api/docs/models/gpt-5.6-terra"
+    },
+    "gpt-5.6-luna": {
+      "providerId": "openai",
+      "label": "OpenAI",
+      "assetId": "openai-blossom",
+      "evidenceId": "openai-api-model-gpt-5.6-luna-reviewed-2026-10-25",
+      "evidenceUrl": "https://developers.openai.com/api/docs/models/gpt-5.6-luna"
+    }
+  }
+}

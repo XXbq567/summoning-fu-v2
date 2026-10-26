@@ -3,6 +3,23 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { PreviewClock, shouldAnimateFrame } = require('../desktop/motion-preview.js');
 const { previewCommandAllowed, sanitizePreviewEvidence, desktopSettingsSnapshot, PreviewReplayGate } = require('../desktop/host-state.cjs');
+test('visible SVG evidence follows computed ancestor visibility and real layout bounds', () => {
+  const { svgIsVisible } = require('../desktop/motion-preview.js');
+  const parent = { parentElement: null, computed: { display: 'block', visibility: 'visible', opacity: '1' } };
+  const svg = { parentElement: parent, computed: { display: 'block', visibility: 'visible', opacity: '1' }, getBoundingClientRect: () => ({ width: 300, height: 600 }) };
+  const styleOf = element => element.computed;
+  assert.equal(svgIsVisible(svg, false, styleOf), true);
+  parent.computed.visibility = 'hidden'; assert.equal(svgIsVisible(svg, false, styleOf), false);
+  parent.computed.visibility = 'visible'; svg.computed.display = 'none'; assert.equal(svgIsVisible(svg, false, styleOf), false);
+  svg.computed.display = 'block'; assert.equal(svgIsVisible(svg, true, styleOf), false);
+  svg.getBoundingClientRect = () => ({ width: 0, height: 600 }); assert.equal(svgIsVisible(svg, false, styleOf), false);
+});
+test('preview uses the actual example button bounds in local coordinates without scaling twice', () => {
+  const { localPreviewGeometry } = require('../desktop/motion-preview.js');
+  const geometry = localPreviewGeometry({ x: 100, y: 50 }, { x: 600, y: 700, width: 60, height: 30 }, { x: 300, y: 100, width: 240, height: 506.6667 });
+  assert.deepEqual(geometry.originRect, { x: 500, y: 650, width: 60, height: 30 });
+  assert.deepEqual(geometry.targetRect, { x: 200, y: 50, width: 240, height: 506.6667 });
+});
 test('preview clock pauses, seeks and replays independently without advancing hidden time', () => {
   const one = new PreviewClock(14000), two = new PreviewClock(14000);
   one.replay(0); one.pause(500); assert.equal(one.snapshot(9000).elapsedMs, 500);
@@ -11,7 +28,26 @@ test('preview clock pauses, seeks and replays independently without advancing hi
   assert.equal(two.snapshot(30000).elapsedMs, 0);
   one.replay(30000); assert.equal(one.snapshot(45000).playing, false); assert.equal(one.snapshot(45000).elapsedMs, 14000);
 });
+test('slow preview changes speed without jumping position or advancing while paused', () => {
+  const clock = new PreviewClock(12500); clock.replay(0);
+  clock.setSpeed(.5, 1000); assert.equal(clock.snapshot(3000).elapsedMs, 2000);
+  clock.pause(3000); clock.setSpeed(.25, 4000); assert.equal(clock.snapshot(9000).elapsedMs, 2000);
+  clock.resume(10000); assert.equal(clock.snapshot(12000).elapsedMs, 2500);
+});
+test('full-preview evidence sampling cannot commit or consume the terminal rendering deadline', () => {
+  const clock = new PreviewClock(850); clock.replay(100);
+  assert.equal(clock.snapshot(1000).elapsedMs, 850);
+  assert.equal(clock.snapshot(1000).playing, false);
+  assert.equal(clock.playing, true, 'only the renderer may commit terminal clearing');
+  assert.equal(clock.position, 0);
+});
+
+test('full preview admits only fixed rolled-paper chapters and expiry diagnostics', () => {
+  for (const action of ['rolling-start', 'rolling', 'rolled', 'rotating', 'target-expire']) assert.equal(previewCommandAllowed(action), true, action);
+  assert.equal(previewCommandAllowed('rolling=custom-script'), false);
+});
 test('preview command and animation gates do not allow arbitrary IPC or omit paper/seal', () => {
+  assert.equal(previewCommandAllowed('unfold'), true); assert.equal(previewCommandAllowed('folding'), true);
   assert.equal(previewCommandAllowed('paper'), true); assert.equal(previewCommandAllowed('replay'), true);
   assert.equal(previewCommandAllowed('executeScript'), false); assert.equal(previewCommandAllowed({ command: 'paper' }), false);
   for (const phase of ['paper', 'writing', 'seal', 'leaving']) assert.equal(shouldAnimateFrame({ visible: true, reducedMotion: false, needsAnimation: true, phase }, false), true);
@@ -23,6 +59,16 @@ test('preview telemetry keeps actual system preference distinct from effective e
   assert.equal(checked.systemReducedMotion, true); assert.equal(checked.effectiveReducedMotion, false); assert.equal(checked.task, undefined);
   assert.equal(sanitizePreviewEvidence({ ...checked, effectiveReducedMotion: true }), null);
   assert.equal(sanitizePreviewEvidence({ ...checked, visibleGlyphs: -1 }), null);
+});
+
+test('a hidden example target keeps current cancellation telemetry without inventing a zero-sized valid target', () => {
+  const packet = { generation: 7, elapsedMs: 7438, phase: 'hidden', playing: false, documentHidden: false, systemReducedMotion: false, effectiveReducedMotion: false, renderCount: 90, rafCount: 87, paperOpacity: 0, opacity: 0, writing: 1, visibleGlyphs: 50, totalGlyphs: 50, holdStartMs: 4150, leaveAtMs: 6150, hideAtMs: 8530, cancellationReason: 'target-changed', exampleTargetRevision: 3, exampleTargetVisible: false, exampleTargetRect: null };
+  const checked = sanitizePreviewEvidence(packet);
+  assert.ok(checked); assert.equal(checked.generation, 7); assert.equal(checked.phase, 'hidden'); assert.equal(checked.playing, false);
+  assert.equal(checked.exampleTargetVisible, false); assert.equal(checked.exampleTargetRect, null);
+  assert.equal(sanitizePreviewEvidence({ ...packet, exampleTargetVisible: true }), null);
+  assert.equal(sanitizePreviewEvidence({ ...packet, exampleTargetVisible: 'no' }), null);
+  assert.equal(sanitizePreviewEvidence({ ...packet, exampleTargetRect: { x: 0, y: 0, width: 0, height: 0 } }), null);
 });
 test('preview-only startup and quit preserve an existing persistent binding and unrelated preferences', () => {
   const previous = { binding: { sessionId: 'real-session', file: 'C:\\existing\\rollout.jsonl' }, preference: 'retained' };
@@ -38,4 +84,31 @@ test('preview reopen queues once before initialization and replays immediately a
   assert.equal(gate.request(), true);
   const clock = new PreviewClock(14000); clock.replay(0); clock.snapshot(15000); clock.replay(16000);
   assert.deepEqual(clock.snapshot(16000), { elapsedMs: 0, playing: true, generation: 2 });
+});
+
+test('automatic QA disables human replay while its narrow IPC and manual preview remain interactive', async () => {
+  const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
+  for (const qaOnly of [true, false]) {
+    let now = 1000, ipcCommand;
+    let resolveMaterial;
+    const materialReady = new Promise(resolve => { resolveMaterial = resolve; });
+    const reports = [], listeners = {};
+    const element = id => ({ id, style: {}, disabled: false, dataset: id === 'example-send' ? { preview: 'replay' } : {}, addEventListener(name, fn) { listeners[id + ':' + name] = fn; }, getBoundingClientRect: () => ({ x: 0, y: 0, width: 360, height: 760 }) });
+    const elements = Object.fromEntries(['preview-paper', 'preview-progress', 'preview-time', 'preview-stage', 'preview-policy', 'preview-source', 'pause-preview', 'example-send', 'stage'].map(id => [id, element(id)]));
+    const buttons = [elements['example-send'], elements['pause-preview']];
+    const document = { hidden: false, fonts: { ready: Promise.resolve() }, addEventListener() {}, querySelector: selector => elements[selector === '.preview-stage' ? 'stage' : selector.slice(1)], querySelectorAll: selector => selector === '[data-preview]' ? [buttons[0]] : selector === 'button' ? buttons : [] };
+    const sandbox = { document, performance: { now: () => now }, matchMedia: () => ({ matches: false, addEventListener() {} }), addEventListener() {}, setInterval() {}, setTimeout: () => 1, clearTimeout() {}, requestAnimationFrame: () => 1, cancelAnimationFrame() {},
+      RitualEntrance: require('../renderer/entrance-timeline.js'), RitualDelivery: require('../renderer/delivery-motion.js'), RitualBurn: { BurnView: class { constructor() { this.svg = { querySelectorAll: () => [], querySelector: () => null }; this.ready = materialReady; } render() {} } },
+      fuPreview: { initial: async () => ({ qaOnly, source: 'example', metadata: {}, coverage: {} }), subscribe: fn => { ipcCommand = fn; }, report: value => reports.push(value) } };
+    vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, '../desktop/motion-preview.js'), 'utf8'), sandbox);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(reports.length, 0, 'preview clock must wait for the real material readiness');
+    resolveMaterial(); await new Promise(resolve => setImmediate(resolve));
+    assert.equal(buttons.every(button => button.disabled === qaOnly), true);
+    const firstGeneration = reports.at(-1).generation;
+    now += 200; listeners['example-send:click']();
+    assert.equal(reports.at(-1).generation, firstGeneration + (qaOnly ? 0 : 1));
+    now += 200; ipcCommand('replay');
+    assert.equal(reports.at(-1).generation, firstGeneration + (qaOnly ? 1 : 2));
+  }
 });

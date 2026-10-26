@@ -1,22 +1,33 @@
 {
   "name": "summoning-fu-handoff",
-  "version": "0.4.1",
+  "version": "0.6.4",
   "private": true,
   "license": "UNLICENSED",
   "description": "Local Codex companion Pet with semantic talisman rendering.",
   "main": "desktop/main.cjs",
   "scripts": {
-    "build": "node scripts/build-preview.cjs",
+    "build": "node scripts/build-paperlab.cjs && node scripts/build-preview.cjs",
+    "build:paperlab": "node scripts/build-paperlab.cjs",
     "test": "node --test tests/*.test.cjs",
     "start": "node scripts/start-desktop.cjs",
     "package:desktop": "node scripts/package-desktop.cjs",
-    "package:plugin": "node scripts/package-plugin.cjs"
+    "package:plugin": "node scripts/package-plugin.cjs",
+    "verify:source": "node scripts/verify-public-source.cjs"
   },
   "devDependencies": {
+    "@electron/packager": "20.3.0",
     "electron": "44.9.3",
-    "@electron/packager": "20.3.0"
+    "esbuild": "0.25.12"
   },
   "engines": {
     "node": ">=22"
+  },
+  "dependencies": {
+    "@react-three/fiber": "9.7.0",
+    "gsap": "3.15.0",
+    "paperlab": "0.8.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "three": "0.186.0"
   }
 }
