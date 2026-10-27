@@ -66,7 +66,7 @@ codex plugin list --marketplace summoning-fu-local --json
 
 ## 本机预览、退出与再次打开
 
-在正常程序的托盘菜单或展开读符页选择“预览完整动效”，打开隔离的本地示例。预览不发送消息、不使用真实聊天，也不验证 Hook。
+在正常程序的托盘菜单或展开读符页选择“预览完整动效”，会重播冻结的当前符内容；没有当前内容时才使用本地示例。当前标题、模型和目录末级名可能含私人信息。预览不发送消息，也不验证 Hook；公开演示宜使用下方独立示例预览。
 
 如果另下载完整桌面便携包，可双击其中 `PREVIEW.cmd` 查看预览；`NORMAL.cmd` 启动正常伴随程序并打开读符页，它会先请求本产品旧正常实例退出。**便携包不会升级已安装插件**，未来 Hook 冷启动用的仍是已安装插件内的运行时。
 
@@ -124,31 +124,8 @@ codex plugin remove summoning-fu@summoning-fu-local --json
 
 ## 从源码构建
 
-在 Windows x64 的源码根目录执行以下步骤。`npm ci` 依据锁文件安装，可能访问 npm 和 Electron 的官方发行来源；应获得用户允许后进行，不全局安装，不升级锁定依赖。
+源码目录不是已构建的本地市场。开发环境、公开源码 `verify:source`、fresh clone 的联网安装影响、锁定依赖、启动与完整构建顺序统一见 [SETUP](docs/SETUP.md)；测试层级、历史基线与真实发送验收见 [TESTING](docs/TESTING.md)。已有依赖的本机测试不等于新机器 `npm ci` 已通过。
 
-公开源码先提供离线完整性检查：
+按 SETUP 依次完成测试、build、桌面打包和插件打包后，最后一步输出 `dist/plugins/summoning-fu-0.6.4-win32-x64-<时间戳>/`。将这个完整目录作为本页“安装 Release 插件包”第 3 步的市场根，再继续官方 CLI 安装、用户审阅 Trust 和真实新根轮次验收。打包本身不安装、不改信任，也不更新现有插件缓存。
 
-```powershell
-npm.cmd run verify:source
-```
-
-该命令用随源码提供的 INTEGRITY 清单核对 SHA256；也可在安装依赖或构建后运行，允许 `.git`、`node_modules`、`dist`、本地诊断目录与生成的预览 HTML 存在。它不访问网络，不是数字签名；源码和清单一起被替换时不能仅凭自带清单证明发布者身份，应同时核对可信 Release 来源。
-
-```powershell
-npm.cmd ci
-npm.cmd test
-npm.cmd run build
-npm.cmd run package:desktop
-npm.cmd run package:plugin
-```
-
-- `build` 生成本地 Paperlab 运行包与预览 HTML。
-- `package:desktop` 输出 `dist/releases/<时间戳>/Summoning-Fu-win32-x64/`。
-- `package:plugin` 检查版本与源码一致，输出 `dist/plugins/summoning-fu-0.6.4-win32-x64-<时间戳>/`，这是安装步骤需要的市场根目录。
-- 打包不自动安装、不更改信任，也不启动官方会话。源码、插件 manifest、锁文件版本必须一致，修改后应重新依次构建，不能用旧桌面包塞入新插件。
-
-公开源码候选实际完成构建与 367/367 测试，无跳过；作者内部基线为 390/390。公开版本不带私人探测、许可采集和归档资料，因此相应四组检查不进入公开测试集；分发所需的第三方许可仍随源码与包保留。作者使用已有锁定本地依赖验证公开候选，没有替读者完成新机器的 `npm ci` 或实机验收。
-
-仅开发启动可用 `npm.cmd start -- --development`；隔离源码预览使用 `node scripts/start-paperlab-preview.cjs`，或双击源码目录的 `PREVIEW-MOTION.cmd`。该预览先构建本地资源，使用独立示例用户目录，不启动真实会话观察。正常源码启动或预览都不能代替已安装插件的真实冷启动验收。不要运行会控制共享正式实例的旧 QA 脚本来冒充用户发送。
-
-当前复用锁定的 Electron 44.9.3、Paperlab 0.8.1、Three.js 0.186.0、GSAP 3.15.0 与相关依赖。许可见 [第三方声明](THIRD-PARTY-NOTICES.md)；GSAP 不应笼统标成 MIT，OpenAI 标志也不是开源插画许可。
+源码正常启动与隔离预览的单实例行为不同，详见 SETUP；不要用新源码或便携程序的播放冒充已安装插件的真实冷启动，也不要运行旧 QA 入口代替用户发送。许可证与品牌条件仍按 [第三方声明](THIRD-PARTY-NOTICES.md) 保留。

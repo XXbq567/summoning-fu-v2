@@ -69,8 +69,8 @@ async function build() {
     }
   }
   for (const directory of ['desktop', 'renderer', 'adapter', 'assets/fonts', 'assets/providers', 'licenses/third-party']) await verifySources(directory);
-  const includedFiles = ['package.json', 'package-lock.json', 'THIRD-PARTY-NOTICES.md', 'config/task-envelope.schema.json', 'config/display-aliases.example.json', 'config/provider-catalog.json'];
-  const includedDocs = ["docs/PUBLIC-VERIFICATION.md"];
+  const includedFiles = ['package.json', 'package-lock.json', 'THIRD-PARTY-NOTICES.md', 'config/task-envelope.schema.json', 'config/display-aliases.example.json', 'config/provider-catalog.json', 'README.md', 'INSTALL.md', 'AGENTS.md', 'CLAUDE.md'];
+  const includedDocs = ["docs/PUBLIC-VERIFICATION.md","docs/ARCHITECTURE.md","docs/SETUP.md","docs/DECISIONS.md","docs/KNOWN_ISSUES.md","docs/TESTING.md","docs/HANDOVER.md"];
   for (const file of [...includedFiles, ...includedDocs]) {
     if (!(await fs.readFile(path.join(root, file))).equals(await readRuntime(file))) throw Error('Stale desktop runtime document: ' + file + '. Rebuild desktop.');
   }
@@ -84,7 +84,7 @@ async function build() {
   await fs.mkdir(path.join(plugin, 'adapter'));
   for (const item of ['envelope.cjs', 'chat-title.cjs', 'entrance-event.cjs', 'paginated-state.cjs']) await fs.copyFile(path.join(root, 'adapter', item), path.join(plugin, 'adapter', item));
   await copyRuntime(desktop, path.join(plugin, 'runtime'));
-  for (const doc of ["README.md","INSTALL.md","AGENTS.md","docs/PUBLIC-VERIFICATION.md","config/provider-catalog.json","assets/providers/USAGE.md","assets/providers/SOURCE.json","assets/providers/openai-black-monoblossom.svg","assets/providers/generic-summoning-mark.svg","assets/fonts/OFL.txt","assets/fonts/NOTICE.txt","assets/fonts/SOURCE.json"]) { const destination = path.join(plugin, doc); await fs.mkdir(path.dirname(destination), { recursive: true }); await fs.copyFile(path.join(root, doc), destination); }
+  for (const doc of ["README.md","INSTALL.md","AGENTS.md","CLAUDE.md","docs/PUBLIC-VERIFICATION.md","docs/ARCHITECTURE.md","docs/SETUP.md","docs/DECISIONS.md","docs/KNOWN_ISSUES.md","docs/TESTING.md","docs/HANDOVER.md","config/provider-catalog.json","assets/providers/USAGE.md","assets/providers/SOURCE.json","assets/providers/openai-black-monoblossom.svg","assets/providers/generic-summoning-mark.svg","assets/fonts/OFL.txt","assets/fonts/NOTICE.txt","assets/fonts/SOURCE.json"]) { const destination = path.join(plugin, doc); await fs.mkdir(path.dirname(destination), { recursive: true }); await fs.copyFile(path.join(root, doc), destination); }
   await fs.copyFile(path.join(root, 'THIRD-PARTY-NOTICES.md'), path.join(plugin, 'THIRD-PARTY-NOTICES.md'));
   await fs.cp(path.join(root, 'vendor/licenses'), path.join(plugin, 'licenses'), { recursive: true });
   await fs.cp(path.join(root, 'licenses/third-party'), path.join(plugin, 'licenses/third-party'), { recursive: true, force: false, errorOnExist: true });

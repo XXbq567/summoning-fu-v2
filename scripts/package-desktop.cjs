@@ -4,7 +4,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { assertPaperlabArtifacts } = require('./paperlab-artifacts.cjs');
 const root = path.resolve(__dirname, '..');
-const included = ["desktop","renderer","adapter","config/task-envelope.schema.json","config/display-aliases.example.json","config/provider-catalog.json","assets/fonts","assets/providers","vendor/licenses","licenses/third-party","package.json","package-lock.json","THIRD-PARTY-NOTICES.md","README.md","INSTALL.md","AGENTS.md"];
+const included = ["desktop","renderer","adapter","config/task-envelope.schema.json","config/display-aliases.example.json","config/provider-catalog.json","assets/fonts","assets/providers","vendor/licenses","licenses/third-party","package.json","package-lock.json","THIRD-PARTY-NOTICES.md","README.md","INSTALL.md","AGENTS.md","CLAUDE.md"];
 async function packagingPlan() {
  const metadata = JSON.parse(await fs.readFile(path.join(root,'package.json'),'utf8'));
  const executable = require('electron'), localDist = path.dirname(executable);
@@ -19,7 +19,7 @@ async function build() {
  const manifest = {};
  for(const item of included){ const source=path.join(root,item),destination=path.join(plan.staging,item);await fs.mkdir(path.dirname(destination),{recursive:true});await fs.cp(source,destination,{recursive:true,errorOnExist:true,force:false}); }
  const docs=path.join(plan.staging,'docs');await fs.mkdir(docs,{recursive:true});
- for(const name of ["PUBLIC-VERIFICATION.md"])await fs.copyFile(path.join(root,'docs',name),path.join(docs,name));
+ for(const name of ["PUBLIC-VERIFICATION.md","ARCHITECTURE.md","SETUP.md","DECISIONS.md","KNOWN_ISSUES.md","TESTING.md","HANDOVER.md"])await fs.copyFile(path.join(root,'docs',name),path.join(docs,name));
  async function index(dir,relative=''){for(const entry of await fs.readdir(dir,{withFileTypes:true})){const rel=path.posix.join(relative,entry.name),absolute=path.join(dir,entry.name);if(entry.isDirectory())await index(absolute,rel);else if(entry.isFile())manifest[rel]=crypto.createHash('sha256').update(await fs.readFile(absolute)).digest('hex');}}
  await index(plan.staging);
  await fs.cp(plan.localDist,plan.destination,{recursive:true,errorOnExist:true,force:false});

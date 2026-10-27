@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "createdAt": "2026-10-26T04:34:50.097Z",
+  "createdAt": "2026-10-27T12:35:43.271Z",
   "classification": "PUBLIC_SOURCE_REVIEW_CANDIDATE",
   "version": "0.6.4",
   "public": true,
@@ -12,7 +12,7 @@
     "native-probe/**",
     "dist/**",
     "node_modules/**",
-    "internal root/docs documents other than the four public entry documents",
+    "internal root/docs documents outside the reviewed public document allowlist",
     "config/hooks.example.json",
     "config/display-aliases.json",
     "scripts/probe-plugin-hooks.cjs",
@@ -31,11 +31,18 @@
     "README.md",
     "INSTALL.md",
     "AGENTS.md",
-    "docs/PUBLIC-VERIFICATION.md"
+    "CLAUDE.md",
+    "docs/PUBLIC-VERIFICATION.md",
+    "docs/ARCHITECTURE.md",
+    "docs/SETUP.md",
+    "docs/DECISIONS.md",
+    "docs/KNOWN_ISSUES.md",
+    "docs/TESTING.md",
+    "docs/HANDOVER.md"
   ],
   "scan": {
     "result": "PASS",
-    "files": 231,
+    "files": 238,
     "types": [
       "forbidden-path/suffix",
       "known-local-username",
@@ -105,8 +112,8 @@
     },
     {
       "path": "AGENTS.md",
-      "bytes": 7069,
-      "sha256": "957eed2378377507cbd850a614baa3e4c1a341505698f3100599b580277ce378"
+      "bytes": 4920,
+      "sha256": "311459b666602870de185a62ca39bccf6b3cfbfc72754e47d1f9f81b1fc4139f"
     },
     {
       "path": "assets/fonts/coverage.json",
@@ -157,6 +164,11 @@
       "path": "assets/providers/USAGE.md",
       "bytes": 1822,
       "sha256": "e742ae9f2a0b243aea34180e1bf1ee177fa52455b6ef600272c7fefedc6e58ab"
+    },
+    {
+      "path": "CLAUDE.md",
+      "bytes": 357,
+      "sha256": "2e41ec26492b3dc23f60dd5edd85aeddd6057736a18ac1a9195c98f0080cf139"
     },
     {
       "path": "config/display-aliases.example.json",
@@ -289,14 +301,44 @@
       "sha256": "553dd7de3694cf417acbb31ebb99b5e449c7b417e531ccae2e846224a3ce9127"
     },
     {
+      "path": "docs/ARCHITECTURE.md",
+      "bytes": 23570,
+      "sha256": "25eedd536c77b6c81d8d7f5a0646d29d9de540b97c8f0cc08430d33d2a28e27f"
+    },
+    {
+      "path": "docs/DECISIONS.md",
+      "bytes": 12703,
+      "sha256": "feb13391f626c94181a7cc39656957ef91083b920d2ce9700ee7f711754d23a1"
+    },
+    {
+      "path": "docs/HANDOVER.md",
+      "bytes": 10119,
+      "sha256": "d1ee2885f365ee5fc4973c6e54d73d4cc5eaee9390a092dacf89b7ef9e4ac1df"
+    },
+    {
+      "path": "docs/KNOWN_ISSUES.md",
+      "bytes": 11546,
+      "sha256": "b55f96bc00780605bd2e17d46d92700f84e3cd3e9af3531cb18dd42db167138b"
+    },
+    {
       "path": "docs/PUBLIC-VERIFICATION.md",
       "bytes": 4863,
       "sha256": "ff80d479a74ff425b6cfec366ba86b606b1b7cdc8241da30c49d9a1076c11cc6"
     },
     {
+      "path": "docs/SETUP.md",
+      "bytes": 14170,
+      "sha256": "7f6ba50502be1438676dbad90cb3bca17a2d34069f082b173c0cee118f09a927"
+    },
+    {
+      "path": "docs/TESTING.md",
+      "bytes": 13821,
+      "sha256": "99126dfc5d6fb94bba65da9a5b99a95c928f1bf1de8895ef77c7dca509eb38e6"
+    },
+    {
       "path": "INSTALL.md",
-      "bytes": 12225,
-      "sha256": "158d5bec6b617befbf44c684593b02c5346bdeac2a0b04f3d7c27a6bb484e38e"
+      "bytes": 11043,
+      "sha256": "dc95f8cbf43639920bcdfaaa88dcdceff2f8d781b2d366c292ff432565ac2002"
     },
     {
       "path": "licenses/third-party/babel__runtime-7.29.10/LICENSE",
@@ -710,8 +752,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 5141,
-      "sha256": "26fd4e517b27b002f71ae9d7e457cb15b9cf49f56b96ae5aec5d804b8607090c"
+      "bytes": 5371,
+      "sha256": "11acafb264360f550788af997da55e3001f14b405a374752cacc1a913aeed057"
     },
     {
       "path": "renderer/burn-view.js",
@@ -835,13 +877,13 @@
     },
     {
       "path": "scripts/package-desktop.cjs",
-      "bytes": 4842,
-      "sha256": "48f3f8638e1d091c424d0f2a32e37f2fe1fb3ebd7fbcfadee87563b31a7ca020"
+      "bytes": 4943,
+      "sha256": "80b6126eaf1f1b021a1fa9e0c8bd221e6c14c7055451b72af31e0d4d80dd86fb"
     },
     {
       "path": "scripts/package-plugin.cjs",
-      "bytes": 9957,
-      "sha256": "27b7a7b8307b09b4a7ecb8d7a31221e4ae7cc3a3114911bb935219b9fdf3578c"
+      "bytes": 10260,
+      "sha256": "e6e507ba40258ff1ce6335cb797ec1423370816a591a8bf505e8b165000423f4"
     },
     {
       "path": "scripts/paperlab-artifacts.cjs",

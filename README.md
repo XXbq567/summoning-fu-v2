@@ -2,44 +2,61 @@
 
 把一次 Codex 工作聊天的发送，化作一张承载模型、聊天标题与来源信息的召唤符。白纸舒展、文字显现，完整阅读 **2 秒**后从底部收卷，旋转 90°，飞入短暂出现的提供方印记；纸与印记最后完全消失。
 
-这是 **Codex 插件＋Windows 透明伴随窗口**，使用 UserPromptSubmit Hook 自动交接。无需让模型调用 skill 或工具，也无需打开官方 Pet 开关。动画表达“交付敕令”，不表示任务成功、完成、费用或百分比。
+这是 **Codex 插件＋Windows 透明伴随窗口**，使用 UserPromptSubmit Hook 自动交接。默认不需要 skill、MCP 端口、模型工具调用或官方 Pet 开关。动画表达“交付敕令”，不表示任务成功、完成、进度、费用或百分比。
 
-## 安装与使用
+## 快速开始
 
-从 [v0.6.4 Release](https://github.com/XXbq567/summoning-fu-v2/releases/tag/v0.6.4) 下载 **Summoning-Fu-plugin-v0.6.4-win32-x64.zip**，完整解压后按 [INSTALL.md](INSTALL.md) 添加本地插件市场、安装并由用户审阅 Trust。
+### 路线一：安装已发布插件
 
-前提是 Windows x64、PATH 中可用的 Node.js 22+，以及支持本项目已核验合同的 Codex。**不要直接把源码仓库当作已打包的插件市场。** 源码构建、升级、回滚、退出和排错也在安装指南中。
+适合直接使用。前提是 Windows x64、Hook 环境能在 PATH 找到 Node.js 22+，以及符合已核验合同的 Codex。
 
-交给自己的 Codex 协助时，可直接说：**“请先读取本仓库 AGENTS.md 和 INSTALL.md，核对我的系统及桌面/CLI 版本，帮我安装 Release 插件；先列出需要运行的命令，Trust 由我在界面完成，最后验证一次真实发送。”**
+1. 从 [v0.6.4 Release](https://github.com/XXbq567/summoning-fu-v2/releases/tag/v0.6.4) 下载 **Summoning-Fu-plugin-v0.6.4-win32-x64.zip**，核对发布来源与校验清单并完整解压。
+2. 按 [INSTALL.md](INSTALL.md) 核对版本、添加市场及安装；由用户在 Settings → Hooks 审阅召唤符的 UserPromptSubmit 并单项 Trust。
+3. 在新的 Codex 工作聊天中正常发送消息，验证自然完整播放。仅切换聊天不触发，预览不能代替真实发送。
 
-安装信任后，在 Codex 工作聊天中发送消息并产生新的根轮次，Hook 会自动启动或唤醒伴随程序。仅打开或切换聊天不触发；不要求输入特定测试语句。显示不抢焦点，主画面鼠标穿透；托盘提供展开读符、动效预览、隐藏与退出。退出后若 Hook 仍启用且受信，下次有效发送可再次启动。
+由 Agent 协助时可说：“先读 AGENTS.md 与 INSTALL.md，列出检查和安装命令及影响，等我确认；Trust 由我完成。”安装、升级、退出、回滚和排错以 INSTALL 为唯一操作入口。源码仓库不是已构建的插件市场，便携包也不会升级已安装插件。
+
+### 路线二：从源码开发与构建
+
+适合维护或自行打包。使用 [公开 GitHub 仓库](https://github.com/XXbq567/summoning-fu-v2) 的正常 clone，先读 [SETUP.md](docs/SETUP.md)。公开源码提供离线完整性检查：
+
+```powershell
+npm.cmd run verify:source
+```
+
+该命令对照随源码提供的 INTEGRITY 清单，不是发布者签名或独立来源证明；作者私有维护目录的脚本集合与公开导出不同。完整构建顺序、产物位置和启动方式只在 SETUP 维护。**执行 `npm.cmd ci` 前先说明并取得联网安装授权**；使用锁定依赖，不顺手升级。构建完成后，按 INSTALL 安装输出的完整市场目录。
 
 ## 内容与来源
 
-| 符内内容 | 使用的证据 |
+模型来自当次 UserPromptSubmit；聊天标题只用同会话已验证的名称，缺失时用题辞，不拿 prompt 正文填符纸。标题、模型与 cwd 末级名也可能私人，公开材料须脱敏。
+
+提供方印记依据 [精确核验目录](config/provider-catalog.json) 和可信来源选择。中转站、产品图标、模型前缀及任意别名不能证明公司；未知或冲突时显示原创通用印，不默认 OpenAI。Logo 静止，外围原创朱砂环单独转动；印记由本程序临时生成，不依赖用户现有 Pet。标志条件见 [素材声明](assets/providers/USAGE.md)。
+
+推理强度严格区分 **reported 当次证据**与 **configured 同会话配置**。“配置·高/中/低”等表示配置快照，**未确认当次生效**；缺失、不合法或两读不一致为 unknown。字段映射、来源验证及生命周期见 [ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+
+## 验证范围
+
+运行版本 **0.6.4**。历史实测仅覆盖 Windows x64、Codex 桌面 `26.1021.3705.0`、桌面运行后端 CLI `0.164.0-alpha.11.1`、单屏 125% 缩放；用户确认运行中真实发送和一次无正常实例时的 Hook 自动冷启动自然完整播放。
+
+[2026-10-26 公开验证摘要](docs/PUBLIC-VERIFICATION.md) 记录内部 390/390、公开候选 367/367 的历史检查结果及差异。它们不是新机器或本轮修改的测试结果；当前验证方法与本轮结果见 [TESTING.md](docs/TESTING.md)。预览、自动检查及安装记录不能代替真实 Hook 验收。
+
+未知线程创建版本/结构保守拒绝；其他系统、多屏、混合 DPI、全屏、睡眠、长期冷启动及普通 ChatGPT 完整链路未完成本版验收。早先一次进程未留存未取得退出码，原因仍未确认。详细边界见 [KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md)。
+
+## 维护入口
+
+新接手的 Agent 从 [HANDOVER.md](docs/HANDOVER.md) 开始；权限以 [AGENTS.md](AGENTS.md) 为准，Claude 使用同一份规则，见 [CLAUDE.md](CLAUDE.md)。
+
+| 文档 | 唯一职责 |
 |---|---|
-| 符头：服务入口 | 安全显示别名；缺失时是明确的原创题辞，不读取凭据 URL |
-| 公司小章 | 明确的公司字段及其来源；与中转站分开，缺失处装饰不代表公司身份 |
-| 奉请名号：模型 | 当次 UserPromptSubmit 的 model |
-| 敕令 | 本程序固定仪式文案，对应本次提交 |
-| 捆仙绳、侧文 | Codex/Harness 与当次 cwd 的末级目录名 |
-| 所请事项 | 同会话的本地聊天标题；待定时显示题辞，不拿提示词冒充标题 |
-| 符胆：推理强度 | 有严格当次上下文证据时 reported；分页会话的同会话配置快照显示“配置·高”等，**未确认当次生效**；否则 unknown |
+| [SETUP](docs/SETUP.md) | 开发环境、依赖、构建与启动 |
+| [ARCHITECTURE](docs/ARCHITECTURE.md) | 数据流、模块、来源合同与生命周期 |
+| [TESTING](docs/TESTING.md) | 检查范围、执行方式与人工验收 |
+| [DECISIONS](docs/DECISIONS.md) | 关键取舍及不可随意放宽的原因 |
+| [KNOWN_ISSUES](docs/KNOWN_ISSUES.md) | 已知问题、限制与未测范围 |
+| [HANDOVER](docs/HANDOVER.md) | 当前状态、证据、改动入口与接手顺序 |
 
-提供方印记依据 [精确核验目录](config/provider-catalog.json)，使用当前事件模型及其可信来源选择。未知别名、来源冲突或未收录提供方显示原创通用印；不凭 `gpt` 前缀、网关名称或产品图标猜公司。OpenAI 标志来自官方品牌素材，使用条件见 [素材声明](assets/providers/USAGE.md)。Logo 静止，外围原创朱砂环单独转动；此印记由本程序生成，与用户现有 Pet 无关。
+## 许可与隐私
 
-## 已验证范围
+原创代码保持 **UNLICENSED**；公开可读不等于授予开源使用许可，没有改为 MIT。第三方依赖、毛笔字体和品牌标志保留各自条件，见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) 与 [第三方许可目录](licenses/third-party/README.md)。
 
-0.6.4 在 Windows x64、桌面 `OpenAI.Codex 26.1021.3705.0`、其运行后端 CLI `0.164.0-alpha.11.1`、单屏 125% 缩放完成真实发送验证。用户多次确认运行中完整播放，并另行确认一次无正常实例时的真实 Hook 自动冷启动。作者内部基线检查 **390/390** 通过；公开源码候选另行完成构建及 **367/367** 检查，无跳过。公开集排除了依赖私人探测、许可采集或归档资料的四组检查，不能把内部数量当作读者执行 `npm test` 的预期数量。
-
-分页元数据仅兼容已核验的线程创建版本 `0.163.0-alpha.10.2`、`0.163.0-alpha.11`、`0.164.0-alpha.11.1` 及精确结构。创建版本与当前 CLI 版本是两种信息；未知结构或版本不会被放行。[公开验证说明](docs/PUBLIC-VERIFICATION.md) 区分实际通过与限制。
-
-其他系统、混合 DPI、多屏、全屏、睡眠及长期冷启动稳定性未完成本版实机验收。普通 ChatGPT 聊天观察入口尚未完整验收，不作为这次可用范围。此前一次进程未留存没有取得退出码，原因仍未确认；一次冷启动通过不能证明所有重启问题已根治。
-
-## 开发与许可
-
-公开源码可先运行 `npm.cmd run verify:source`，离线对照 INTEGRITY 文件核验源码 SHA256；这是完整性检查，**不是发布者签名或独立来源认证**。源码构建入口：`npm ci` → `npm test` → `npm run build` → `npm run package:desktop` → `npm run package:plugin`。详细用途和网络影响见 [安装指南](INSTALL.md#从源码构建)。供其他 Codex 协作安装、检查与开发的边界见 [AGENTS.md](AGENTS.md)。
-
-原创代码保持 **UNLICENSED**；公开可读不等于授予开源使用许可。本项目没有改为 MIT。第三方依赖、毛笔字体和品牌标志保留各自许可及条件，见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) 与 [第三方许可目录](licenses/third-party/README.md)。
-
-公开仓库不包含个人配置、真实聊天、原始参考图、内部截图或原始诊断记录。显示数据仅在本地处理；动画不额外调用模型或上传任务内容。
+公开源码和发布包排除个人配置、真实聊天、内部原参考图、内部截图及原始诊断记录。正常动画在本地处理，不额外调用模型、不上传任务内容、不将显示文本注入开发者上下文。
